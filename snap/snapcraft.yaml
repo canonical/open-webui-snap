@@ -1,18 +1,17 @@
 name: open-webui
 
-summary: ChatGPT-Style Web UI Client for Ollama 🦙 (formerly Ollama WebUI)
+summary: Open WebUI is a user-friendly AI Interface (Supports Ollama, OpenAI API, ...)
 description: |
-  The Open WebUI consists of two primary components:
-  the frontend and the backend (which serves as a reverse proxy,
-  handling static frontend files, and additional features).
-  Both are set up.
-license: MIT
+  Open WebUI is an extensible, feature-rich, and user-friendly self-hosted AI platform designed to operate entirely offline. 
+  It supports various LLM runners like Ollama and OpenAI-compatible APIs, with built-in inference engine for RAG, making it a powerful AI deployment solution.
+
+# license: unset # there is a history of license changes
 
 base: core24
 grade: stable
 confinement: strict
 
-version: "dev"
+adopt-info: owui-pip
 
 # Faster compression to speed up build
 compression: lzo
@@ -27,7 +26,7 @@ parts:
     source: ./scripts
     organize:
       info.sh: bin/info.sh
-      run-snap.sh: bin/run-snap.sh
+      run-server.sh: bin/run-server.sh
 
   owui-pip:
     plugin: python
@@ -42,13 +41,20 @@ parts:
       - python3-minimal
     python-packages:
       - open-webui
+    override-build: |
+      craftctl default
+      
+      owui_pip_version="$(python3 -m pip show open-webui | grep Version: | awk '{print $2}')"
+      snap_packaging_commit="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
+      
+      craftctl set version="$owui_pip_version+snap.$snap_packaging_commit"
 
 apps:
   open-webui:
     command: bin/info.sh
 
-  listener:
-    command: bin/run-snap.sh
+  server:
+    command: bin/run-server.sh
     daemon: simple
     install-mode: enable
     restart-condition: on-failure
