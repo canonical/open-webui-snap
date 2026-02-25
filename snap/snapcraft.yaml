@@ -1,0 +1,64 @@
+name: open-webui
+
+summary: ChatGPT-Style Web UI Client for Ollama 🦙 (formerly Ollama WebUI)
+description: |
+  The Open WebUI consists of two primary components:
+  the frontend and the backend (which serves as a reverse proxy,
+  handling static frontend files, and additional features).
+  Both are set up.
+license: MIT
+
+base: core24
+grade: stable
+confinement: strict
+
+version: "dev"
+
+# Faster compression to speed up build
+compression: lzo
+
+platforms:
+  amd64:
+  arm64:
+
+parts:
+  local:
+    plugin: dump
+    source: ./scripts
+    organize:
+      info.sh: bin/info.sh
+      run-snap.sh: bin/run-snap.sh
+
+  owui-pip:
+    plugin: python
+    source: .
+    build-packages:
+      - python3-minimal
+      - python3-venv
+      - python3-dev
+      - python3-pip
+      - git
+    stage-packages:
+      - python3-minimal
+    python-packages:
+      - open-webui
+
+apps:
+  open-webui:
+    command: bin/info.sh
+
+  listener:
+    command: bin/run-snap.sh
+    daemon: simple
+    install-mode: enable
+    restart-condition: on-failure
+    plugs:
+      - home
+      - removable-media
+      - network
+      - network-bind
+      - opengl
+    environment:
+      ENV: prod
+      DATA_DIR: $SNAP_COMMON/data
+      STATIC_DIR: $SNAP_DATA/static
