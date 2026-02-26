@@ -11,8 +11,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - [ self-hosted, amd64, noble, large ]
-          - [ self-hosted, arm64, noble, large ]
+          - [ self-hosted, amd64, noble, medium ]
+          - [ self-hosted, arm64, noble, medium ]
     with:
       runner: "${{ toJSON(matrix.runner) }}"
       publish-channel: 'latest/edge' # Add track if needed, e.g., 24/latest/edge
