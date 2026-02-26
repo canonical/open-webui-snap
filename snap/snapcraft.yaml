@@ -50,8 +50,8 @@ parts:
       craftctl set version="$owui_pip_version+snap.$snap_packaging_commit"
       
       # Nvidia packages are >4GB and generally not required
-      rm -r $CRAFT_PART_INSTALL/lib/python3*/site-packages/nvidia
-      rm $CRAFT_PART_INSTALL/lib/python3*/site-packages/torch/lib/libtorch_cuda.so
+      rm -r $CRAFT_PART_INSTALL/lib/python3*/site-packages/nvidia || true
+      rm $CRAFT_PART_INSTALL/lib/python3*/site-packages/torch/lib/libtorch_cuda.so || true
 
 apps:
   open-webui:
