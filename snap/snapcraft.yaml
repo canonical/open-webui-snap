@@ -51,6 +51,7 @@ parts:
       
       # Nvidia packages are >4GB and generally not required
       rm -r $CRAFT_PART_INSTALL/lib/python3*/site-packages/nvidia
+      rm $CRAFT_PART_INSTALL/lib/python3*/site-packages/torch/lib/libtorch_cuda.so
 
 apps:
   open-webui:
