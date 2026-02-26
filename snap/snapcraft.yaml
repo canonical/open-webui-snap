@@ -44,10 +44,13 @@ parts:
     override-build: |
       craftctl default
       
+      # Set the snap version to the pip version and append the snap packaging commit hash
       owui_pip_version="$(python3 -m pip show open-webui | grep Version: | awk '{print $2}')"
       snap_packaging_commit="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
-      
       craftctl set version="$owui_pip_version+snap.$snap_packaging_commit"
+      
+      # Nvidia packages are >4GB and generally not required
+      rm -r $CRAFT_PART_INSTALL/lib/python3*/site-packages/nvidia
 
 apps:
   open-webui:
