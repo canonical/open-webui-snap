@@ -15,7 +15,6 @@ jobs:
           - [ self-hosted, arm64, noble, large ]
     with:
       runner: "${{ toJSON(matrix.runner) }}"
-      init-build-script: 'prepare-models.sh'
       publish-channel: 'latest/edge' # Add track if needed, e.g., 24/latest/edge
     secrets:
       store-credentials: ${{ secrets.STORE_LOGIN }}
