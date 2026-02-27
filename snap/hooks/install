@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+
+snapctl set host="127.0.0.1"
+snapctl set port="8080"

@@ -1,0 +1,81 @@
+name: open-webui
+
+icon: logo.png
+summary: Open WebUI is a user-friendly AI Interface (Supports Ollama, OpenAI API, ...)
+description: |
+  Open WebUI is an extensible, feature-rich, and user-friendly self-hosted AI platform designed to operate entirely offline. 
+  It supports various LLM runners like Ollama and OpenAI-compatible APIs, with built-in inference engine for RAG, making it a powerful AI deployment solution.
+
+# license: unset # there is a history of license changes
+
+base: core24
+grade: stable
+confinement: strict
+
+adopt-info: owui-pip
+
+# Faster compression to speed up build
+compression: lzo
+
+platforms:
+  amd64:
+  arm64:
+
+parts:
+  local:
+    plugin: dump
+    source: ./scripts
+    organize:
+      info.sh: bin/info.sh
+      run-server.sh: bin/run-server.sh
+
+  owui-pip:
+    plugin: python
+    source: .
+    build-packages:
+      - python3-minimal
+      - python3-venv
+      - python3-dev
+      - python3-pip
+      - git
+    stage-packages:
+      - python3-minimal
+    python-packages:
+      - open-webui
+    override-build: |
+      craftctl default
+      
+      # Set the snap version to the pip version and append the snap packaging commit hash
+      owui_pip_version="$(python3 -m pip show open-webui | grep Version: | awk '{print $2}')"
+      snap_packaging_commit="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
+      craftctl set version="$owui_pip_version+snap.$snap_packaging_commit"
+      
+      # Remove GPU-specific packages and replace with CPU-only alternatives
+      pip uninstall torch triton \
+        nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 nvidia-cuda-nvrtc-cu12 \
+        nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cufft-cu12 \
+        nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 \
+        nvidia-nccl-cu12 nvidia-nvjitlink-cu12 nvidia-nvtx-cu12 -y
+      pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+
+apps:
+  open-webui:
+    command: bin/info.sh
+    desktop: open-webui.desktop
+
+  server:
+    command: bin/run-server.sh
+    daemon: simple
+    install-mode: enable
+    restart-condition: on-failure
+    plugs:
+      - home
+      - removable-media
+      - network
+      - network-bind
+      - opengl
+    environment:
+      ENV: prod
+      DATA_DIR: $SNAP_COMMON/data
+      STATIC_DIR: $SNAP_DATA/static

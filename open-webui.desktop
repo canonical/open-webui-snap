@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Open WebUI
+Exec=xdg-open http://localhost:8080/
+Icon=web-browser
+Terminal=false
