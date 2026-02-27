@@ -3,6 +3,8 @@
 set -e
 
 HOST=$(snapctl get host)
+export HOST
 PORT=$(snapctl get port)
+export PORT
 
-exec open-webui serve --host "$HOST" --port "$PORT" "$@"
+$SNAP/backend/start.sh "$@"
