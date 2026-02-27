@@ -12,10 +12,7 @@ base: core24
 grade: stable
 confinement: strict
 
-adopt-info: owui-pip
-
-# Faster compression to speed up build
-compression: lzo
+adopt-info: open-webui
 
 platforms:
   amd64:
@@ -29,9 +26,10 @@ parts:
       info.sh: bin/info.sh
       run-server.sh: bin/run-server.sh
 
-  owui-pip:
+  open-webui:
     plugin: python
-    source: .
+    source: requirements.txt
+    source-type: file
     build-packages:
       - python3-minimal
       - python3-venv
@@ -40,9 +38,12 @@ parts:
       - git
     stage-packages:
       - python3-minimal
-    python-packages:
-      - open-webui
+    python-requirements:
+      - requirements.txt
     override-build: |
+      # The python plugin fails if we run the build while files from a previous build exist in the install dir
+      rm -rf $CRAFT_PART_INSTALL/*
+      
       craftctl default
       
       # Set the snap version to the pip version and append the snap packaging commit hash
