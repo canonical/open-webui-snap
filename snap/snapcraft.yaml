@@ -50,13 +50,14 @@ parts:
       snap_packaging_commit="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
       craftctl set version="$owui_pip_version+snap.$snap_packaging_commit"
       
-      # Remove GPU-specific packages and replace with CPU-only alternatives
+      # Remove GPU-specific pytorch and its dependencies
       pip uninstall torch triton \
         nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 nvidia-cuda-nvrtc-cu12 \
         nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cufft-cu12 \
         nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 \
         nvidia-nccl-cu12 nvidia-nvjitlink-cu12 nvidia-nvtx-cu12 -y
-      pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+      # Install CPU-only pytorch
+      # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 
 apps:
