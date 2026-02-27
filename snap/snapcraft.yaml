@@ -1,5 +1,6 @@
 name: open-webui
 
+icon: logo.png
 summary: Open WebUI is a user-friendly AI Interface (Supports Ollama, OpenAI API, ...)
 description: |
   Open WebUI is an extensible, feature-rich, and user-friendly self-hosted AI platform designed to operate entirely offline. 
@@ -61,6 +62,7 @@ parts:
 apps:
   open-webui:
     command: bin/info.sh
+    desktop: open-webui.desktop
 
   server:
     command: bin/run-server.sh
