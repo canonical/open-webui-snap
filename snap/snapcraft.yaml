@@ -24,6 +24,8 @@ parts:
     organize:
       info.sh: bin/info.sh
       run-server.sh: bin/run-server.sh
+      open-frontend.sh: bin/open-frontend.sh
+      open-webui.desktop: bin/open-webui.desktop
 
   open-webui:
     plugin: python
@@ -62,7 +64,8 @@ parts:
 
 apps:
   open-webui:
-    command: bin/info.sh
+    command: bin/open-frontend.sh
+    desktop: bin/open-webui.desktop
 
   server:
     command: bin/run-server.sh

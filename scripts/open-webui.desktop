@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Open WebUI
+Exec=open-webui
+Icon=web-browser
+Terminal=false
