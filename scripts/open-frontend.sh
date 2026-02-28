@@ -1,5 +1,20 @@
 #!/bin/bash
 
+HOST=$(snapctl get host)
 PORT=$(snapctl get port)
 
-xdg-open http://localhost:$PORT/
+SERVICE_NAME="$SNAP_INSTANCE_NAME.server"
+SERVICE_INFO=$(snapctl services $SERVICE_NAME)
+
+STATUS=$(echo "$SERVICE_INFO" | awk -v svc="$SERVICE_NAME" '$0 ~ svc {print $3}')
+
+echo "$SERVICE_NAME: $STATUS"
+
+if [ "$STATUS" == "active" ]; then
+  echo ''
+  echo "Opening http://localhost:$PORT/ in your browser..."
+  xdg-open http://localhost:$PORT/
+else
+  echo ''
+  echo "If you expected the service to be up, check that the port $PORT is available, not bound by some other service."
+fi

@@ -22,7 +22,6 @@ parts:
     plugin: dump
     source: ./scripts
     organize:
-      info.sh: bin/info.sh
       run-server.sh: bin/run-server.sh
       open-frontend.sh: bin/open-frontend.sh
       open-webui.desktop: bin/open-webui.desktop
@@ -66,6 +65,8 @@ apps:
   open-webui:
     command: bin/open-frontend.sh
     desktop: bin/open-webui.desktop
+    plugs:
+      - desktop
 
   server:
     command: bin/run-server.sh
