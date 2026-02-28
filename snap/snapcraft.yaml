@@ -45,6 +45,11 @@ parts:
       
       craftctl default
       
+      # Set the snap version to the pip version and append the snap packaging commit hash
+      owui_pip_version="$(python3 -m pip show open-webui | grep Version: | awk '{print $2}')"
+      snap_packaging_commit="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
+      craftctl set version="$owui_pip_version+snap.$snap_packaging_commit"
+      
       # Remove GPU-specific pytorch and its dependencies
       pip uninstall torch triton \
         nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 nvidia-cuda-nvrtc-cu12 \
@@ -53,14 +58,6 @@ parts:
         nvidia-nccl-cu12 nvidia-nvjitlink-cu12 nvidia-nvtx-cu12 -y
       # Install CPU-only pytorch
       pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-    override-prime: |
-      craftctl default
-      
-      # Set the snap version to the pip version and append the snap packaging commit hash
-      owui_pip_version="$(python3 -m pip show open-webui | grep Version: | awk '{print $2}')"
-      snap_packaging_commit="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
-      craftctl set version="$owui_pip_version+snap.$snap_packaging_commit"
 
 
 apps:
