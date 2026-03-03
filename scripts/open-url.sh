@@ -10,11 +10,6 @@ STATUS=$(echo "$SERVICE_INFO" | awk -v svc="$SERVICE_NAME" '$0 ~ svc {print $3}'
 
 echo "$SERVICE_NAME: $STATUS"
 
-if [ "$STATUS" == "active" ]; then
-  echo ''
-  echo "Opening http://localhost:$PORT/ in your browser..."
-  xdg-open http://localhost:$PORT/
-else
-  echo ''
-  echo "If you expected the service to be up, check that the port $PORT is available, not bound by some other service."
-fi
+echo ''
+echo "Opening http://localhost:$PORT/ in your browser..."
+xdg-open http://localhost:$PORT/
