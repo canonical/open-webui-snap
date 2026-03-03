@@ -56,8 +56,8 @@ parts:
         nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cufft-cu12 \
         nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 \
         nvidia-nccl-cu12 nvidia-nvjitlink-cu12 nvidia-nvtx-cu12 -y
-      # Install CPU-only pytorch - removed for now as it is not absolutely required
-      # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+      # Install CPU-only pytorch
+      pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 
 apps:
