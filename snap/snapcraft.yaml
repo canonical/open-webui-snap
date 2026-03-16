@@ -70,13 +70,13 @@ parts:
     after:
       - open-webui
     plugin: nil
+    source: .
     override-prime: |
-      owui_version="$(python3 -m pip show open-webui | grep Version: | awk '{print $2}')"
-      owui_license_dir="$CRAFT_STAGE/lib/python3.12/site-packages/open_webui-${owui_version}.dist-info/licenses"
-
-      # The licenses of all Python packages, including open_webui are packaged in the snap.
       # Copy Open WebUI license files to a more visible location
-      cp -vr "$owui_license_dir" "$CRAFT_PRIME/open-webui-licenses"
+      cp -vr $CRAFT_STAGE/lib/python*/site-packages/open_webui-*.dist-info/licenses $CRAFT_PRIME/open-webui-licenses
+      
+      # Add the NOTICE file
+      cp -v $CRAFT_PROJECT_DIR/NOTICE $CRAFT_PRIME/
 
 apps:
   open-webui:
