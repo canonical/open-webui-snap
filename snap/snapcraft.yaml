@@ -27,8 +27,7 @@ parts:
 
   open-webui:
     plugin: python
-    source: requirements.txt
-    source-type: file
+    source: dependencies
     build-packages:
       - python3-minimal
       - python3-venv
@@ -58,6 +57,8 @@ parts:
     after:
       - open-webui
     plugin: nil
+    # Use repo root as source to force recalculating the version on any change
+    source: .
     override-prime: |
       owui_version="$(python3 -m pip show open-webui | grep Version: | awk '{print $2}')"
       snap_packaging_commit="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
