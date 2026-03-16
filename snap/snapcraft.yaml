@@ -37,8 +37,8 @@ parts:
       - git
     stage-packages:
       - python3-minimal
-    python-requirements:
-      - requirements.txt
+    python-packages:
+      - "open-webui==0.8.7"
     override-build: |
       # The python plugin fails if we run the build while files from a previous build exist in the install dir
       rm -rf $CRAFT_PART_INSTALL/*
@@ -58,6 +58,8 @@ parts:
     after:
       - open-webui
     plugin: nil
+    # Use repo root as source to force recalculating the version on any change
+    source: .
     override-prime: |
       owui_version="$(python3 -m pip show open-webui | grep Version: | awk '{print $2}')"
       snap_packaging_commit="$(git -C $SNAPCRAFT_PROJECT_DIR describe --always --dirty)"
