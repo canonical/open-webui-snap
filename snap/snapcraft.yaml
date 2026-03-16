@@ -79,3 +79,4 @@ apps:
       ENV: prod
       DATA_DIR: $SNAP_COMMON/data
       STATIC_DIR: $SNAP_DATA/static
+      ENABLE_VERSION_UPDATE_CHECK: false
