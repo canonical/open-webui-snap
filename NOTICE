@@ -1,0 +1,15 @@
+This snap package is a distribution of the Open WebUI, available at:
+https://github.com/open-webui/open-webui
+
+The snap packaging is not an official distribution channel of Open WebUI. 
+Is created and maintained by a third party.
+
+Copies of the Open WebUI project licenses are included within the snap and may
+be accessed at:
+/snap/open-webui/current/open-webui-licenses
+
+The packaging and distribution of this snap follow the same licensing terms as
+the Open WebUI project.
+
+Licenses for Python packages included in this snap may be found under:
+/snap/open-webui/current/lib/python<version>/site-packages/
