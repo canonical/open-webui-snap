@@ -27,8 +27,7 @@ parts:
 
   open-webui:
     plugin: python
-    source: requirements.txt
-    source-type: file
+    source: dependencies
     build-packages:
       - python3-minimal
       - python3-venv
