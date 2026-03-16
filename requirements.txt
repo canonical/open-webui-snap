@@ -1,4 +1,0 @@
-# This file is used as source for the open-webui part.
-# The part needs a source, but we do not want one that constantly change and invalidate the cache.
-# Due to bug https://github.com/canonical/craft-parts/issues/1364 changes to this file is not reliably detected.
-# Instead we list the packages under `python-packages` in the `snapcraft.yaml` file, where changes are detected correctly.

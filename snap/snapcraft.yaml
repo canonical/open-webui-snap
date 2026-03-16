@@ -27,8 +27,7 @@ parts:
 
   open-webui:
     plugin: python
-    source: requirements.txt
-    source-type: file
+    source: dependencies
     build-packages:
       - python3-minimal
       - python3-venv
@@ -37,8 +36,8 @@ parts:
       - git
     stage-packages:
       - python3-minimal
-    python-packages:
-      - "open-webui==0.8.7"
+    python-requirements:
+      - requirements.txt
     override-build: |
       # The python plugin fails if we run the build while files from a previous build exist in the install dir
       rm -rf $CRAFT_PART_INSTALL/*
