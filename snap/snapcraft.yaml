@@ -17,6 +17,16 @@ platforms:
   amd64:
   arm64:
 
+plugs:
+  openai:
+    interface: content
+    content: owui-openai
+    target: $SNAP/shared-configs
+  ollama:
+    interface: content
+    content: owui-ollama
+    target: $SNAP/shared-configs
+
 parts:
   local:
     plugin: dump
@@ -24,6 +34,7 @@ parts:
     organize:
       info.sh: bin/info.sh
       run-server.sh: bin/run-server.sh
+      sync-configs.py: bin/sync-configs.py
 
   open-webui:
     plugin: python
