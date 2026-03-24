@@ -7,13 +7,30 @@ import sqlite3
 print("Syncing configs")
 
 DB_PATH = os.path.join(os.environ.get("SNAP_COMMON", ""), "data", "webui.db")
+SHARED_CONFIGS_DIR = os.path.join(os.environ.get("SNAP", ""), "shared-configs")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def ensure_snap_tag(tags: list) -> list:
+    """Return a copy of *tags* that always contains {"name": "snap"}."""
+    tags = list(tags)
+    if not any(isinstance(t, dict) and t.get("name") == "snap" for t in tags):
+        tags.append({"name": "snap"})
+    return tags
 
 
 def has_snap_tag(api_config: dict) -> bool:
     """Return True if the api_config entry has a tag object with name 'snap'."""
     tags = api_config.get("tags", [])
-    return any(tag.get("name") == "snap" for tag in tags if isinstance(tag, dict))
+    return any(isinstance(t, dict) and t.get("name") == "snap" for t in tags)
 
+
+# ---------------------------------------------------------------------------
+# Removal
+# ---------------------------------------------------------------------------
 
 def remove_snap_entries(section: dict) -> dict:
     """
@@ -52,10 +69,117 @@ def remove_snap_entries(section: dict) -> dict:
     return new_section
 
 
+# ---------------------------------------------------------------------------
+# Addition
+# ---------------------------------------------------------------------------
+
+def add_openai_entry(section: dict, file_cfg: dict) -> dict:
+    """
+    Append a new OpenAI connection entry to the openai section using the
+    values from an openai.json shared-config file.
+    The 'snap' tag is always added to the entry.
+    """
+    new_section = dict(section)
+
+    api_base_urls = list(section.get("api_base_urls", []))
+    api_keys = list(section.get("api_keys", []))
+    api_configs = dict(section.get("api_configs", {}))
+
+    new_index = str(len(api_base_urls))
+
+    api_base_urls.append(file_cfg["base_url"])
+    api_keys.append(file_cfg.get("api_key", ""))
+    api_configs[new_index] = {
+        "enable": file_cfg.get("enable", True),
+        "tags": ensure_snap_tag(file_cfg.get("tags", [])),
+        "prefix_id": file_cfg.get("prefix_id", ""),
+        "model_ids": file_cfg.get("model_ids", []),
+        "connection_type": file_cfg.get("connection_type", "external"),
+        "auth_type": file_cfg.get("auth_type", "none"),
+    }
+
+    new_section["api_base_urls"] = api_base_urls
+    new_section["api_keys"] = api_keys
+    new_section["api_configs"] = api_configs
+
+    return new_section
+
+
+def add_ollama_entry(section: dict, file_cfg: dict) -> dict:
+    """
+    Append a new Ollama connection entry to the ollama section using the
+    values from an ollama.json shared-config file.
+    The 'snap' tag is always added to the entry.
+    """
+    new_section = dict(section)
+
+    base_urls = list(section.get("base_urls", []))
+    api_configs = dict(section.get("api_configs", {}))
+
+    new_index = str(len(base_urls))
+
+    base_urls.append(file_cfg["base_url"])
+    api_configs[new_index] = {
+        "enable": file_cfg.get("enable", True),
+        "tags": ensure_snap_tag(file_cfg.get("tags", [])),
+        "prefix_id": file_cfg.get("prefix_id", ""),
+        "model_ids": file_cfg.get("model_ids", []),
+        "connection_type": file_cfg.get("connection_type", "external"),
+        "auth_type": file_cfg.get("auth_type", "bearer"),
+        "key": file_cfg.get("key", ""),
+    }
+
+    new_section["base_urls"] = base_urls
+    new_section["api_configs"] = api_configs
+
+    return new_section
+
+
+# ---------------------------------------------------------------------------
+# Shared-config discovery
+# ---------------------------------------------------------------------------
+
+def load_shared_configs() -> tuple[list[dict], list[dict]]:
+    """
+    Walk $SNAP/shared-configs/<name>/ and collect every openai.json /
+    ollama.json found there.  Returns (openai_cfgs, ollama_cfgs).
+    """
+    openai_cfgs: list[dict] = []
+    ollama_cfgs: list[dict] = []
+
+    if not os.path.isdir(SHARED_CONFIGS_DIR):
+        print(f"Shared-configs directory not found at {SHARED_CONFIGS_DIR}, skipping.")
+        return openai_cfgs, ollama_cfgs
+
+    for entry in sorted(os.listdir(SHARED_CONFIGS_DIR)):
+        subdir = os.path.join(SHARED_CONFIGS_DIR, entry)
+        if not os.path.isdir(subdir):
+            continue
+
+        for filename, target_list in (("openai.json", openai_cfgs), ("ollama.json", ollama_cfgs)):
+            filepath = os.path.join(subdir, filename)
+            if os.path.isfile(filepath):
+                try:
+                    with open(filepath) as fh:
+                        cfg = json.load(fh)
+                    print(f"  Loaded {filepath}")
+                    target_list.append(cfg)
+                except Exception as exc:
+                    print(f"  WARNING: could not read {filepath}: {exc}")
+
+    return openai_cfgs, ollama_cfgs
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def sync_configs():
     if not os.path.exists(DB_PATH):
         print(f"Database not found at {DB_PATH}, skipping.")
         return
+
+    openai_cfgs, ollama_cfgs = load_shared_configs()
 
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -69,13 +193,20 @@ def sync_configs():
         row_id, data_json = row
         config = json.loads(data_json)
 
-        # Process openai section
+        # Remove all previously snap-managed entries
         if "openai" in config:
             config["openai"] = remove_snap_entries(config["openai"])
-
-        # Process ollama section
         if "ollama" in config:
             config["ollama"] = remove_snap_entries(config["ollama"])
+
+        # Add entries from shared-configs
+        for file_cfg in openai_cfgs:
+            config.setdefault("openai", {"api_base_urls": [], "api_keys": [], "api_configs": {}})
+            config["openai"] = add_openai_entry(config["openai"], file_cfg)
+
+        for file_cfg in ollama_cfgs:
+            config.setdefault("ollama", {"base_urls": [], "api_configs": {}})
+            config["ollama"] = add_ollama_entry(config["ollama"], file_cfg)
 
         updated_json = json.dumps(config)
         cursor.execute("UPDATE config SET data = ? WHERE id = ?", (updated_json, row_id))
