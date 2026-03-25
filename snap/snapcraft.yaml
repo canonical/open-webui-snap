@@ -10,6 +10,7 @@ description: |
 base: core24
 grade: stable
 confinement: strict
+compression: lzo
 
 adopt-info: version
 
@@ -18,13 +19,9 @@ platforms:
   arm64:
 
 plugs:
-  openai:
+  config:
     interface: content
-    content: owui-openai
-    target: $SNAP/shared-configs
-  ollama:
-    interface: content
-    content: owui-ollama
+    content: open-webui-config
     target: $SNAP/shared-configs
 
 parts:

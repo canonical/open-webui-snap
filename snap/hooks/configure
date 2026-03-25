@@ -1,3 +1,2 @@
 #!/bin/bash
-
-snapctl restart "$SNAP_INSTANCE_NAME"
+set -e
