@@ -47,8 +47,8 @@ parts:
       # Remove GPU-specific pytorch and its dependencies
       pip install pip-autoremove
       pip-autoremove torch -y
-      rm -rf $CRAFT_PART_INSTALL/lib/python3.12/site-packages/nvidia
-      rm -rf $CRAFT_PART_INSTALL/lib/python3.12/site-packages/torch
+      rm -rf $CRAFT_PART_INSTALL/lib/python*/site-packages/nvidia
+      rm -rf $CRAFT_PART_INSTALL/lib/python*/site-packages/torch
       
       # Install CPU-only pytorch
       pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
