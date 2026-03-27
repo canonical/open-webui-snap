@@ -10,7 +10,6 @@ description: |
 base: core24
 grade: stable
 confinement: strict
-compression: lzo
 
 adopt-info: version
 
@@ -31,7 +30,7 @@ parts:
     organize:
       info.sh: bin/info.sh
       run-server.sh: bin/run-server.sh
-      sync-configs.py: bin/sync-configs.py
+      import-shared-configs.py: bin/import-shared-configs.py
 
   open-webui:
     plugin: python

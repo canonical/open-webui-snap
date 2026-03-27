@@ -76,8 +76,8 @@ def remove_snap_entries(section: dict) -> dict:
 def add_openai_entry(section: dict, file_cfg: dict) -> dict:
     """
     Append a new OpenAI connection entry to the openai section using the
-    values from an openai.json shared-config file.
-    The 'snap' tag is always added to the entry.
+    base_url from an openai.json shared-config file.
+    All other fields use default values. The 'snap' tag is always added.
     """
     new_section = dict(section)
 
@@ -88,14 +88,14 @@ def add_openai_entry(section: dict, file_cfg: dict) -> dict:
     new_index = str(len(api_base_urls))
 
     api_base_urls.append(file_cfg["base_url"])
-    api_keys.append(file_cfg.get("api_key", ""))
+    api_keys.append("")
     api_configs[new_index] = {
-        "enable": file_cfg.get("enable", True),
-        "tags": ensure_snap_tag(file_cfg.get("tags", [])),
-        "prefix_id": file_cfg.get("prefix_id", ""),
-        "model_ids": file_cfg.get("model_ids", []),
-        "connection_type": file_cfg.get("connection_type", "external"),
-        "auth_type": file_cfg.get("auth_type", "none"),
+        "enable": True,
+        "tags": ensure_snap_tag([]), # adds the snap tag
+        "prefix_id": "",
+        "model_ids": [],
+        "connection_type": "external",
+        "auth_type": "none",
     }
 
     new_section["api_base_urls"] = api_base_urls
@@ -108,8 +108,8 @@ def add_openai_entry(section: dict, file_cfg: dict) -> dict:
 def add_ollama_entry(section: dict, file_cfg: dict) -> dict:
     """
     Append a new Ollama connection entry to the ollama section using the
-    values from an ollama.json shared-config file.
-    The 'snap' tag is always added to the entry.
+    base_url from an ollama.json shared-config file.
+    All other fields use default values. The 'snap' tag is always added.
     """
     new_section = dict(section)
 
@@ -120,13 +120,13 @@ def add_ollama_entry(section: dict, file_cfg: dict) -> dict:
 
     base_urls.append(file_cfg["base_url"])
     api_configs[new_index] = {
-        "enable": file_cfg.get("enable", True),
-        "tags": ensure_snap_tag(file_cfg.get("tags", [])),
-        "prefix_id": file_cfg.get("prefix_id", ""),
-        "model_ids": file_cfg.get("model_ids", []),
-        "connection_type": file_cfg.get("connection_type", "external"),
-        "auth_type": file_cfg.get("auth_type", "bearer"),
-        "key": file_cfg.get("key", ""),
+        "enable": True,
+        "tags": ensure_snap_tag([]), # adds the snap tag
+        "prefix_id": "",
+        "model_ids": [],
+        "connection_type": "external",
+        "auth_type": "none",
+        "key": "",
     }
 
     new_section["base_urls"] = base_urls
