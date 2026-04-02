@@ -1,18 +1,29 @@
-#!/usr/bin/python3
-
+#!/usr/bin/env python3
+import builtins
 import json
 import os
 import sqlite3
-
-print("Syncing configs")
+import sys
 
 DB_PATH = os.path.join(os.environ.get("SNAP_COMMON", ""), "data", "webui.db")
 SHARED_CONFIGS_DIR = os.path.join(os.environ.get("SNAP", ""), "shared-configs")
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+# Store the original print function
+builtin_print = builtins.print
+log_prefix = "[import config]"
+
+
+def print(*args, **kwargs):
+    """My custom print() function with a prefix."""
+    # Create a list of all arguments
+    all_args = (log_prefix,) + args
+
+    # Call the original print function with the modified arguments
+    builtin_print(*all_args, **kwargs)
+
 
 def ensure_snap_tag(tags: list) -> list:
     """Return a copy of *tags* that always contains {"name": "snap"}."""
@@ -91,7 +102,7 @@ def add_openai_entry(section: dict, file_cfg: dict) -> dict:
     api_keys.append("")
     api_configs[new_index] = {
         "enable": True,
-        "tags": ensure_snap_tag([]), # adds the snap tag
+        "tags": ensure_snap_tag([]),  # adds the snap tag
         "prefix_id": "",
         "model_ids": [],
         "connection_type": "external",
@@ -121,7 +132,7 @@ def add_ollama_entry(section: dict, file_cfg: dict) -> dict:
     base_urls.append(file_cfg["base_url"])
     api_configs[new_index] = {
         "enable": True,
-        "tags": ensure_snap_tag([]), # adds the snap tag
+        "tags": ensure_snap_tag([]),  # adds the snap tag
         "prefix_id": "",
         "model_ids": [],
         "connection_type": "external",
@@ -139,7 +150,7 @@ def add_ollama_entry(section: dict, file_cfg: dict) -> dict:
 # Shared-config discovery
 # ---------------------------------------------------------------------------
 
-def load_shared_configs() -> tuple[list[dict], list[dict]]:
+def read_shared_configs() -> tuple[list[dict], list[dict]]:
     """
     Walk $SNAP/shared-configs/<name>/ and collect every openai.json /
     ollama.json found there.  Returns (openai_cfgs, ollama_cfgs).
@@ -148,7 +159,7 @@ def load_shared_configs() -> tuple[list[dict], list[dict]]:
     ollama_cfgs: list[dict] = []
 
     if not os.path.isdir(SHARED_CONFIGS_DIR):
-        print(f"Shared-configs directory not found at {SHARED_CONFIGS_DIR}, skipping.")
+        print(f"No shared configurations to import.")
         return openai_cfgs, ollama_cfgs
 
     for entry in sorted(os.listdir(SHARED_CONFIGS_DIR)):
@@ -174,12 +185,12 @@ def load_shared_configs() -> tuple[list[dict], list[dict]]:
 # Main
 # ---------------------------------------------------------------------------
 
-def sync_configs():
+def apply_configs():
     if not os.path.exists(DB_PATH):
         print(f"Database not found at {DB_PATH}, skipping.")
         return
 
-    openai_cfgs, ollama_cfgs = load_shared_configs()
+    openai_cfgs, ollama_cfgs = read_shared_configs()
 
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -211,9 +222,11 @@ def sync_configs():
         updated_json = json.dumps(config)
         cursor.execute("UPDATE config SET data = ? WHERE id = ?", (updated_json, row_id))
         conn.commit()
-        print("Config updated successfully.")
+        print("Database updated successfully.")
     finally:
         conn.close()
 
 
-sync_configs()
+if __name__ == "__main__":
+    print("Importing configurations from connected snaps")
+    apply_configs()

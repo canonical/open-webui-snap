@@ -90,6 +90,7 @@ apps:
     command: bin/info.sh
 
   server:
+    command-chain: [bin/import-shared-configs.py]
     command: bin/run-server.sh
     daemon: simple
     install-mode: enable

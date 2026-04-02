@@ -1,2 +1,3 @@
 #!/bin/bash
-set -e
+
+# This script is required to support snap configurations with `snap set|unset`
