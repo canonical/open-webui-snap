@@ -105,3 +105,8 @@ apps:
       DATA_DIR: $SNAP_COMMON/data
       STATIC_DIR: $SNAP_DATA/static
       ENABLE_VERSION_UPDATE_CHECK: "false"
+
+  check-shared-configs:
+    command: bin/import-shared-configs.py
+    daemon: oneshot
+    timer: 00:00-24:00/1440
