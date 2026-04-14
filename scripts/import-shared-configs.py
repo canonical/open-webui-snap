@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-Prompt used to generate this script:
-
-This script runs every minute. Look into imprt-shared-configs to see how we did things before. This time do the following:
-1. Check if database exists. If not exit.
-2. Check if config table has a single entry. If not exit.
-3. Read all openai and ollama configs from the database, which are tagged with "snap".
-4. Read all openai and ollama configs from shared configs.
-5. Compare the lists from the database to the lists from the shared configs.
-6. If they are the same, exit.
-7. Apply any changes, both removals and additions, to the database, so that the configs in the database tagged with snap reflects the configs shared via files.
-8. If any changes are made, restart the service with snapctl restart open-webui.
-"""
-
 import builtins
 import json
 import os
@@ -24,18 +10,10 @@ import sys
 DB_PATH = os.path.join(os.environ.get("SNAP_COMMON", ""), "data", "webui.db")
 SHARED_CONFIGS_DIR = os.path.join(os.environ.get("SNAP", ""), "shared-configs")
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-builtin_print = builtins.print
-log_prefix = "[check config]"
-
-
-def print(*args, **kwargs):
-    """Custom print() function with a prefix."""
-    all_args = (log_prefix,) + args
-    builtin_print(*all_args, **kwargs)
-
 
 def ensure_snap_tag(tags: list) -> list:
     """Return a copy of *tags* that always contains {"name": "snap"}."""
@@ -218,7 +196,7 @@ def add_ollama_entry(section: dict, file_cfg: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def check_and_sync():
-    # 1. Check if database exists
+    # Check if database exists
     if not os.path.exists(DB_PATH):
         print(f"Database not found at {DB_PATH}, exiting.")
         sys.exit(0)
@@ -227,7 +205,7 @@ def check_and_sync():
     try:
         cursor = conn.cursor()
 
-        # 2. Check if config table has a single entry
+        # Check if config table has a single entry
         cursor.execute("SELECT COUNT(*) FROM config")
         count = cursor.fetchone()[0]
         if count != 1:
@@ -239,25 +217,25 @@ def check_and_sync():
         row_id, data_json = row
         config = json.loads(data_json)
 
-        # 3. Read snap-tagged entries from the database
+        # Read snap-tagged entries from the database
         db_openai_urls, db_ollama_urls = read_snap_entries_from_db(config)
         print(f"DB snap openai urls: {db_openai_urls}")
         print(f"DB snap ollama urls: {db_ollama_urls}")
 
-        # 4. Read shared configs from files
+        # Read shared configs from files
         shared_openai_cfgs, shared_ollama_cfgs = read_shared_configs()
         shared_openai_urls = [c["base_url"] for c in shared_openai_cfgs]
         shared_ollama_urls = [c["base_url"] for c in shared_ollama_cfgs]
         print(f"Shared openai urls: {shared_openai_urls}")
         print(f"Shared ollama urls: {shared_ollama_urls}")
 
-        # 5 & 6. Compare; exit early if identical (order-insensitive)
+        # Compare; exit early if identical (order-insensitive)
         if sorted(db_openai_urls) == sorted(shared_openai_urls) and \
                 sorted(db_ollama_urls) == sorted(shared_ollama_urls):
             print("Configs are in sync, nothing to do.")
             sys.exit(0)
 
-        # 7. Apply changes: remove all snap entries, then re-add from shared configs
+        # Apply changes: remove all snap entries, then re-add from shared configs
         print("Changes detected, updating database...")
 
         if "openai" in config:
@@ -281,7 +259,7 @@ def check_and_sync():
     finally:
         conn.close()
 
-    # 8. Restart the service
+    # Restart the service
     print("Restarting open-webui service...")
     subprocess.run(["snapctl", "restart", "open-webui"], check=True)
     print("Service restarted.")
