@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+exec "$SNAP"/bin/import-shared-configs.py
