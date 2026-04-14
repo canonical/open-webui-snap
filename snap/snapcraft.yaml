@@ -17,6 +17,12 @@ platforms:
   amd64:
   arm64:
 
+plugs:
+  config:
+    interface: content
+    content: open-webui-config
+    target: $SNAP/shared-configs
+
 parts:
   local:
     plugin: dump
@@ -24,6 +30,7 @@ parts:
     organize:
       info.sh: bin/info.sh
       run-server.sh: bin/run-server.sh
+      import-shared-configs.py: bin/import-shared-configs.py
 
   open-webui:
     plugin: python
@@ -98,3 +105,8 @@ apps:
       DATA_DIR: $SNAP_COMMON/data
       STATIC_DIR: $SNAP_DATA/static
       ENABLE_VERSION_UPDATE_CHECK: "false"
+
+  import-shared-configs:
+    command: bin/import-shared-configs.py
+    daemon: oneshot
+    timer: 00:00-24:00/1440
