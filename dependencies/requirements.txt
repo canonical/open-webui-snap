@@ -1,1 +1,1 @@
-open-webui==0.8.12
+open-webui==0.9.2
