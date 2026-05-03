@@ -6,12 +6,12 @@ Open WebUI itself is included into the snap as a Python pip package.
 
 ## Auto configuration via snap connections
 
-Open WebUI supports automatic configuration of OpenAI-compatible and Ollama endpoints through the snap [content interface](https://snapcraft.io/docs/content-interface). Inference snaps (e.g. snaps that serve an LLM) can expose a `config` slot that Open WebUI reads to register the endpoint automatically.
+Open WebUI supports automatic configuration of OpenAI-compatible and Ollama endpoints through the snap [content interface](https://snapcraft.io/docs/content-interface). Any snap can expose a `config` slot that Open WebUI reads to register the endpoint automatically.
 
-### Connecting an inference snap
+### Connecting a snap
 
 ```
-sudo snap connect open-webui:config <inference-snap>:open-webui
+sudo snap connect open-webui:config <snap-name>:open-webui
 ```
 
 After the connection is made, Open WebUI's `connect-plug-config` hook runs immediately and adds the endpoint to the database. If Open WebUI was still initialising when the hook ran, a periodic job re-checks and applies any pending configs once every minute.
@@ -19,12 +19,12 @@ After the connection is made, Open WebUI's `connect-plug-config` hook runs immed
 To disconnect:
 
 ```
-sudo snap disconnect open-webui:config <inference-snap>:open-webui
+sudo snap disconnect open-webui:config <snap-name>:open-webui
 ```
 
 The periodic job detects the disconnection and removes the endpoint from the database within one minute.
 
-### Providing a config slot (for inference snap developers)
+### Providing a config slot
 
 To expose a `config` slot that Open WebUI can consume, declare a slot with content ID `open-webui-config` in your snap's `snapcraft.yaml`:
 
