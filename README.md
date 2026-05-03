@@ -55,4 +55,3 @@ Inside the shared directory (`$SNAP/open-webui-config`) create one or both of th
 }
 ```
 
-The `base_url` field is required. Open WebUI will add the endpoint to its database tagged as `snap`-managed so that it can be cleanly removed when the interface is disconnected.
