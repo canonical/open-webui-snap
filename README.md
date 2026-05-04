@@ -43,7 +43,7 @@ Inside the shared directory (`$SNAP/open-webui-config`) create one or both of th
 
 ```json
 {
-  "base_url": "http://localhost:11435/v1"
+  "base_url": "http://localhost:8080/v1"
 }
 ```
 
