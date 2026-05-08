@@ -1,2 +1,4 @@
 /*.snap
 /squashfs-root
+/test-results/
+/tests/.venv/

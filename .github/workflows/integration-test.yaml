@@ -1,0 +1,119 @@
+name: Integration Test
+
+on:
+  workflow_call:
+    inputs:
+      snap-channel:
+        description: 'Snap Store channel to install open-webui from (e.g. latest/edge or latest/edge/pr-42)'
+        required: true
+        type: string
+      runner:
+        description: 'JSON-encoded runner labels'
+        required: false
+        type: string
+        default: '["self-hosted", "amd64", "noble", "medium"]'
+
+jobs:
+  integration-test:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Snap setup ────────────────────────────────────────────────────────────
+
+      - name: Wait for snapd to be ready
+        run: |
+          sudo snap wait system seed.loaded
+
+      - name: Install gemma4 snap
+        run: |
+          sudo snap install gemma4
+          echo "Waiting for gemma4 services to become active..."
+          timeout 120 bash -c \
+            'until sudo snap services gemma4 | grep -E "^gemma4\." | grep -v "inactive"; do sleep 3; done'
+
+      - name: Install open-webui snap from channel
+        run: |
+          sudo snap install open-webui --channel "${{ inputs.snap-channel }}"
+
+      - name: Connect gemma4 content interface
+        run: |
+          sudo snap connect open-webui:config gemma4:open-webui
+
+      # ── Wait for server ───────────────────────────────────────────────────────
+
+      - name: Wait for open-webui server to be healthy
+        run: |
+          echo "Waiting for open-webui server on http://localhost:8080/health ..."
+          timeout 600 bash -c \
+            'until curl -sf http://localhost:8080/health > /dev/null; do sleep 5; done'
+          echo "Server is up."
+
+      # ── Verify logs ───────────────────────────────────────────────────────────
+
+      - name: Check server logs for startup errors
+        run: |
+          LOGS=$(sudo snap logs open-webui.server -n 150)
+          echo "$LOGS"
+          if echo "$LOGS" | grep -iE "^.*(Traceback \(most recent|CRITICAL|Failed to start)"; then
+            echo "::error::Critical errors detected in server logs"
+            exit 1
+          fi
+
+      # ── Python / Playwright setup ─────────────────────────────────────────────
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: |
+          pip install -r tests/requirements.txt
+          playwright install chromium
+          playwright install-deps chromium
+
+      # ── Run tests ─────────────────────────────────────────────────────────────
+
+      - name: Run integration tests
+        env:
+          BASE_URL: http://localhost:8080
+          ADMIN_NAME: Test Admin
+          ADMIN_EMAIL: testadmin@example.com
+          ADMIN_PASSWORD: TestPassword123!
+        run: |
+          pytest tests/ -v \
+            --screenshot=only-on-failure \
+            --video=retain-on-failure \
+            --tracing=retain-on-failure \
+            --output=test-results
+
+      # ── Collect artefacts ─────────────────────────────────────────────────────
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results-${{ github.run_id }}
+          path: test-results/
+          retention-days: 14
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: |
+          echo "=== open-webui.server logs ==="
+          sudo snap logs open-webui.server -n 300
+          echo "=== open-webui.import-shared-configs logs ==="
+          sudo snap logs open-webui.import-shared-configs -n 50 || true
+
+      # ── Cleanup ───────────────────────────────────────────────────────────────
+
+      - name: Remove snaps
+        if: always()
+        run: |
+          sudo snap remove open-webui --purge || true
+          sudo snap remove gemma4 --purge || true
+

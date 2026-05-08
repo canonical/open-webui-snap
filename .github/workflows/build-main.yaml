@@ -18,3 +18,11 @@ jobs:
       publish-channel: 'latest/edge' # Add track if needed, e.g., 24/latest/edge
     secrets:
       store-credentials: ${{ secrets.STORE_LOGIN }}
+
+  integration-test:
+    needs: build-and-publish
+    uses: ./.github/workflows/integration-test.yaml
+    with:
+      snap-channel: 'latest/edge'
+      runner: '["self-hosted", "amd64", "noble", "medium"]'
+

@@ -26,3 +26,12 @@ jobs:
       publish-channel: latest/edge/pr-${{ github.event.pull_request.number }} # Add track if needed, e.g., 24/latest/edge/pr-#
     secrets:
       store-credentials: ${{ secrets.STORE_LOGIN }}
+
+  integration-test:
+    needs: build-and-publish
+    if: github.event.label.name == vars.PR_BUILD_TRIGGER_LABEL
+    uses: ./.github/workflows/integration-test.yaml
+    with:
+      snap-channel: latest/edge/pr-${{ github.event.pull_request.number }}
+      runner: '["self-hosted", "amd64", "noble", "medium"]'
+
