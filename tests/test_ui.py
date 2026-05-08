@@ -8,6 +8,7 @@ no accounts and the signup form is only shown once.
 
 import os
 import re
+import time
 import struct
 import zlib
 import pathlib
@@ -44,20 +45,33 @@ def _make_pdf(path: pathlib.Path) -> pathlib.Path:
     """Write a minimal single-page PDF to *path* if it doesn't already exist."""
     if path.exists():
         return path
-    body = (
-        b"%PDF-1.4\n"
-        b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-        b"3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R"
-        b"/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
-        b"4 0 obj<</Length 44>>stream\n"
-        b"BT /F1 12 Tf 100 700 Td (Hello PDF) Tj ET\n"
-        b"endstream\nendobj\n"
-        b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
-        b"xref\n0 6\n0000000000 65535 f \n"
-        b"trailer<</Size 6/Root 1 0 R>>\nstartxref\n9\n%%EOF"
+    # Build a structurally valid PDF with correct xref offsets.
+    obj1 = b"1 0 obj\n<</Type /Catalog /Pages 2 0 R>>\nendobj\n"
+    obj2 = b"2 0 obj\n<</Type /Pages /Kids [3 0 R] /Count 1>>\nendobj\n"
+    obj3 = b"3 0 obj\n<</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]>>\nendobj\n"
+
+    header = b"%PDF-1.4\n"
+    off1 = len(header)
+    off2 = off1 + len(obj1)
+    off3 = off2 + len(obj2)
+    body = header + obj1 + obj2 + obj3
+
+    xref_offset = len(body)
+    xref = (
+        b"xref\n"
+        b"0 4\n"
+        b"0000000000 65535 f \n"
+        + f"{off1:010d} 00000 n \n".encode()
+        + f"{off2:010d} 00000 n \n".encode()
+        + f"{off3:010d} 00000 n \n".encode()
     )
-    path.write_bytes(body)
+    trailer = (
+        b"trailer\n<</Size 4 /Root 1 0 R>>\n"
+        b"startxref\n"
+        + str(xref_offset).encode() + b"\n"
+        b"%%EOF\n"
+    )
+    path.write_bytes(body + xref + trailer)
     return path
 
 
@@ -78,6 +92,22 @@ def _make_audio(path: pathlib.Path) -> pathlib.Path:
     return path
 
 
+def _wait_for_file_processing(page: Page, timeout_ms: int = 30_000) -> None:
+    """Wait for any file processing spinners in the input area to disappear."""
+    try:
+        # Spinner appears while file is being processed (e.g. audio transcription)
+        spinner = page.locator("form .spinner_ajPY, form [class*='spinner'], form svg[class*='spin']").first
+        if spinner.is_visible(timeout=2_000):
+            spinner.wait_for(state="hidden", timeout=timeout_ms)
+    except Exception:
+        pass  # No spinner found or already done
+    # Also ensure network activity is idle
+    try:
+        page.wait_for_load_state("networkidle", timeout=timeout_ms)
+    except Exception:
+        pass
+
+
 def _dismiss_any_modal(page: Page) -> None:
     """Close a release-notes or changelog modal if present."""
     close_btn = page.locator("button[aria-label='Close'], button:has-text('Close'), button:has-text('OK')")
@@ -88,29 +118,54 @@ def _dismiss_any_modal(page: Page) -> None:
 def _open_model_selector(page: Page) -> None:
     """Click the model selector button."""
     page.locator(
+        "button[aria-label^='Selected model'], "
+        "button#model-selector-0-button, "
         "button[aria-label='Select a model'], "
-        "[data-testid='model-selector'], "
-        "button:has-text('Select a model')"
+        "[data-testid='model-selector']"
     ).first.click()
 
 
 def _select_gemma_model(page: Page) -> None:
     """Open model selector and pick the first gemma model found."""
-    _open_model_selector(page)
-    # Wait for the dropdown options to appear
-    gemma_option = page.locator("[role='option']:has-text('gemma'), li:has-text('gemma')").first
-    gemma_option.wait_for(timeout=15_000)
-    gemma_option.click()
+    # Retry opening the selector in case the model list was stale on first open.
+    deadline = time.time() + 60
+    while True:
+        _open_model_selector(page)
+        gemma_option = page.locator("[role='option']:has-text('gemma'), li:has-text('gemma')").first
+        if gemma_option.is_visible(timeout=3_000):
+            gemma_option.click()
+            return
+        page.keyboard.press("Escape")
+        if time.time() >= deadline:
+            raise TimeoutError("Gemma model did not appear in model selector within 60 s")
+        page.wait_for_timeout(3_000)
 
 
 def _send_message(page: Page, text: str) -> None:
-    chat_input = page.locator("textarea[placeholder], [data-testid='chat-input']").first
-    chat_input.fill(text)
+    chat_input = page.locator("#chat-input, .tiptap.ProseMirror, textarea[placeholder], [data-testid='chat-input']").first
+    chat_input.click()
+    chat_input.type(text)
     page.keyboard.press("Enter")
+    # Wait until the page navigates to a chat URL (message was actually submitted)
+    try:
+        page.wait_for_url("**/c/**", timeout=15_000)
+    except Exception:
+        # If already at a chat URL or navigation doesn't happen, continue
+        pass
 
 
 def _wait_for_response(page: Page, timeout_ms: int = 120_000) -> None:
     """Wait until a new assistant message appears and streaming finishes."""
+    # First, ensure we're at a chat URL (message was sent)
+    if "/c/" not in page.url:
+        try:
+            page.wait_for_url("**/c/**", timeout=15_000)
+        except Exception:
+            raise AssertionError(
+                f"Page did not navigate to a chat URL after sending message. "
+                f"Current URL: {page.url}"
+            )
+
     # A "stop generation" button appears while streaming; wait for it to disappear.
     stop_btn = page.locator("button[aria-label='Stop generation'], button:has-text('Stop')")
     # It might take a moment to appear, then we wait for it to go away.
@@ -122,7 +177,10 @@ def _wait_for_response(page: Page, timeout_ms: int = 120_000) -> None:
 
     # Ensure at least one assistant message is visible.
     expect(
-        page.locator(".message.assistant, [data-role='assistant'], [data-testid='assistant-message']").first
+        page.locator(
+            ".chat-assistant, .message.assistant, [data-role='assistant'], "
+            "[data-testid='assistant-message'], [data-message-role='assistant']"
+        ).first
     ).to_be_visible(timeout=timeout_ms)
 
 
@@ -138,7 +196,10 @@ def test_server_health_endpoint():
 
 def test_signup_or_login_form_shown(browser: Browser):
     """On a fresh install the signup form must be visible at the root URL."""
-    context = browser.new_context(base_url=BASE_URL)
+    context = browser.new_context(
+        base_url=BASE_URL,
+        viewport={"width": 1920, "height": 1080},
+    )
     page = context.new_page()
     page.goto("/")
     page.wait_for_load_state("networkidle")
@@ -172,9 +233,21 @@ def test_release_notes_show_version(admin_page: Page):
 def test_gemma4_model_appears_in_selector(admin_page: Page):
     """The gemma4 model (provided via snap connection) must appear in the model selector."""
     _dismiss_any_modal(admin_page)
-    _open_model_selector(admin_page)
-    gemma_entry = admin_page.locator("[role='option']:has-text('gemma'), li:has-text('gemma')").first
-    expect(gemma_entry).to_be_visible(timeout=15_000)
+    # The model list is fetched when the dropdown opens; if gemma isn't registered
+    # yet, close and reopen to re-fetch until it appears (up to 60 s total).
+    deadline = time.time() + 60
+    found = False
+    while time.time() < deadline:
+        _open_model_selector(admin_page)
+        gemma_entry = admin_page.locator("[role='option']:has-text('gemma'), li:has-text('gemma')").first
+        if gemma_entry.is_visible(timeout=3_000):
+            found = True
+            break
+        # Close dropdown and wait before trying again
+        admin_page.keyboard.press("Escape")
+        admin_page.wait_for_timeout(3_000)
+    if not found:
+        pytest.fail("Gemma model did not appear in the model selector within 60 s")
     # Close selector
     admin_page.keyboard.press("Escape")
 
@@ -195,11 +268,10 @@ def test_image_upload_prompt(admin_page: Page):
     image_path = _make_png(pathlib.Path("/tmp/owui_test_image.png"))
 
     with admin_page.expect_file_chooser() as fc_info:
-        admin_page.locator(
-            "button[aria-label*='Attach'], button[aria-label*='Upload'], "
-            "button[aria-label*='attach'], [data-testid='upload-button']"
-        ).first.click()
+        admin_page.locator("#input-menu-button").click()
+        admin_page.locator("button:has-text('Upload Files')").first.click()
     fc_info.value.set_files(str(image_path))
+    _wait_for_file_processing(admin_page)
 
     _send_message(admin_page, "What colour is the dominant colour in this image? One word answer.")
     _wait_for_response(admin_page, timeout_ms=120_000)
@@ -213,11 +285,10 @@ def test_pdf_upload_prompt(admin_page: Page):
     pdf_path = _make_pdf(pathlib.Path("/tmp/owui_test.pdf"))
 
     with admin_page.expect_file_chooser() as fc_info:
-        admin_page.locator(
-            "button[aria-label*='Attach'], button[aria-label*='Upload'], "
-            "button[aria-label*='attach'], [data-testid='upload-button']"
-        ).first.click()
+        admin_page.locator("#input-menu-button").click()
+        admin_page.locator("button:has-text('Upload Files')").first.click()
     fc_info.value.set_files(str(pdf_path))
+    _wait_for_file_processing(admin_page)
 
     _send_message(admin_page, "Summarise this document in one sentence.")
     _wait_for_response(admin_page, timeout_ms=120_000)
@@ -231,11 +302,10 @@ def test_audio_upload_prompt(admin_page: Page):
     audio_path = _make_audio(pathlib.Path("/tmp/owui_test.wav"))
 
     with admin_page.expect_file_chooser() as fc_info:
-        admin_page.locator(
-            "button[aria-label*='Attach'], button[aria-label*='Upload'], "
-            "button[aria-label*='attach'], [data-testid='upload-button']"
-        ).first.click()
+        admin_page.locator("#input-menu-button").click()
+        admin_page.locator("button:has-text('Upload Files')").first.click()
     fc_info.value.set_files(str(audio_path))
+    _wait_for_file_processing(admin_page)
 
     _send_message(admin_page, "Describe this audio in one sentence.")
     _wait_for_response(admin_page, timeout_ms=120_000)

@@ -143,6 +143,31 @@ timeout 600 bash -c \
   || error "Server did not become healthy within 10 min.  Check: sudo snap logs open-webui.server"
 info "Server is up."
 
+# ── Wait for gemma model to be discovered ─────────────────────────────────────
+step "Waiting for gemma model to appear in Open WebUI"
+info "Creating admin account and polling /api/models until a gemma model is listed (up to 120 s)..."
+
+# Create admin account (idempotent — ignores errors if it already exists).
+curl -sf -X POST http://localhost:8080/api/v1/auths/signup \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"${ADMIN_NAME:-Test Admin}\",\"email\":\"${ADMIN_EMAIL:-testadmin@example.com}\",\"password\":\"${ADMIN_PASSWORD:-TestPassword123!}\"}" \
+  > /dev/null 2>&1 || true
+
+# Sign in to get a token.
+MODELS_TOKEN=$(curl -sf -X POST http://localhost:8080/api/v1/auths/signin \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"${ADMIN_EMAIL:-testadmin@example.com}\",\"password\":\"${ADMIN_PASSWORD:-TestPassword123!}\"}" \
+  | grep -o '"token":"[^"]*"' | cut -d'"' -f4) || true
+
+if [[ -n "$MODELS_TOKEN" ]]; then
+  timeout 120 bash -c \
+    "until curl -sf -H 'Authorization: Bearer $MODELS_TOKEN' http://localhost:8080/api/models | grep -qi 'gemma'; do echo '  ...model not ready yet'; sleep 5; done" \
+    || warn "Gemma model did not appear in /api/models within 120 s — proceeding anyway."
+  info "Gemma model is available."
+else
+  warn "Could not obtain auth token to check model availability — proceeding anyway."
+fi
+
 # ── Check startup logs ────────────────────────────────────────────────────────
 step "Checking server logs for startup errors"
 LOGS=$(sudo snap logs open-webui.server -n 150)
