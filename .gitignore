@@ -1,2 +1,4 @@
+/work*.yaml
+/.work*.lock
 /*.snap
 /squashfs-root
