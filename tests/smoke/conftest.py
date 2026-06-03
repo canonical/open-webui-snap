@@ -1,6 +1,17 @@
 import os
+import subprocess
+import time
+
 import pytest
 import requests
+
+# How long to wait for the server to become healthy (seconds)
+HEALTH_TIMEOUT = 600  # 10 min — model cold-start can be slow
+POLL_INTERVAL = 5
+
+ADMIN_NAME = "Smoke Admin"
+ADMIN_EMAIL = "admin@smoke.test"
+ADMIN_PASSWORD = "SmokeTest1234!"
 
 
 @pytest.fixture(scope="session")
@@ -13,3 +24,68 @@ def client(base_url):
     s = requests.Session()
     s.base_url = base_url
     return s
+
+
+@pytest.fixture(scope="session")
+def server_ready(base_url):
+    """Poll GET /health until 200 or HEALTH_TIMEOUT.
+
+    Returns a dict with:
+      - healthy (bool): True when /health returned 200
+      - journal (str): recent journalctl output for snap.open-webui.server
+    """
+    deadline = time.monotonic() + HEALTH_TIMEOUT
+    last_exc = None
+
+    while time.monotonic() < deadline:
+        try:
+            r = requests.get(f"{base_url}/health", timeout=5)
+            if r.status_code == 200:
+                journal = _get_journal()
+                return {"healthy": True, "journal": journal}
+        except requests.RequestException as exc:
+            last_exc = exc
+        time.sleep(POLL_INTERVAL)
+
+    journal = _get_journal()
+    pytest.fail(
+        f"Server did not become healthy within {HEALTH_TIMEOUT}s. "
+        f"Last error: {last_exc}\n\nJournal tail:\n{journal}"
+    )
+
+
+def _get_journal(lines: int = 500) -> str:
+    result = subprocess.run(
+        [
+            "journalctl",
+            "-u", "snap.open-webui.server",
+            "--no-pager",
+            "-n", str(lines),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
+@pytest.fixture(scope="session")
+def admin_token(client, server_ready):
+    """Sign up the first admin account and return its JWT.
+
+    Open WebUI lets the very first signup become admin with no prior auth.
+    """
+    resp = client.post(
+        f"{client.base_url}/api/v1/auths/signup",
+        json={
+            "name": ADMIN_NAME,
+            "email": ADMIN_EMAIL,
+            "password": ADMIN_PASSWORD,
+        },
+    )
+    assert resp.status_code == 200, (
+        f"Admin signup returned {resp.status_code}: {resp.text}"
+    )
+    data = resp.json()
+    token = data.get("token")
+    assert token, f"No 'token' key in signup response: {data}"
+    return token

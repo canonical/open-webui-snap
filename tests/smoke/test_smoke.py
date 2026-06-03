@@ -1,22 +1,25 @@
 import pytest
 
 
-@pytest.mark.skip(reason="step 3")
-def test_server_not_crashed(client):
+def test_server_not_crashed(server_ready):
     """Server logs contain no traceback while port 8080 comes up."""
-    pass
+    journal = server_ready["journal"]
+    assert "Traceback" not in journal, (
+        f"Python traceback found in snap.open-webui.server journal:\n{journal}"
+    )
 
 
-@pytest.mark.skip(reason="step 3")
-def test_ui_reachable(client):
+def test_ui_reachable(server_ready, client):
     """GET /health returns 200."""
-    pass
+    r = client.get(f"{client.base_url}/health")
+    assert r.status_code == 200, (
+        f"GET /health returned {r.status_code}: {r.text}"
+    )
 
 
-@pytest.mark.skip(reason="step 3")
-def test_admin_signup(client):
+def test_admin_signup(admin_token):
     """POST /api/v1/auths/signup succeeds and returns a token."""
-    pass
+    assert admin_token, "Admin signup did not return a usable JWT token"
 
 
 @pytest.mark.skip(reason="step 4")

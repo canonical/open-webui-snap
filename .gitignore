@@ -2,3 +2,7 @@
 /.work*.lock
 /*.snap
 /squashfs-root
+
+# Python tests
+.venv
+__pycache__
