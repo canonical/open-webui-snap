@@ -4,6 +4,8 @@ import pytest
 
 from conftest import MODELS_TIMEOUT, POLL_INTERVAL
 
+RAG_PROCESS_TIMEOUT = 120  # 2 min hard cap for PDF indexing
+
 
 def test_server_not_crashed(server_ready):
     """Server logs contain no traceback while port 8080 comes up."""
@@ -99,7 +101,45 @@ def test_audio_transcription(auth_client, audio_path):
     )
 
 
-@pytest.mark.skip(reason="step 6")
-def test_pdf_rag(client):
-    """Upload fixture PDF, wait for indexing, prompt about it, assert RAG answer is correct."""
-    pass
+def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
+    """Upload CC-BY-SA-4.0.pdf, wait for indexing, ask for a summary, assert 'creative commons' in reply."""
+    # 1. Upload the PDF
+    with open(rag_pdf_path, "rb") as fh:
+        r = auth_client.post(
+            f"{auth_client.base_url}/api/v1/files/",
+            files={"file": ("CC-BY-SA-4.0.pdf", fh, "application/pdf")},
+        )
+    assert r.status_code == 200, f"File upload returned {r.status_code}: {r.text}"
+    file_id = r.json().get("id")
+    assert file_id, f"No 'id' in upload response: {r.json()}"
+
+    # 2. Poll until indexing is complete
+    deadline = time.monotonic() + RAG_PROCESS_TIMEOUT
+    while time.monotonic() < deadline:
+        s = auth_client.get(f"{auth_client.base_url}/api/v1/files/{file_id}/process/status")
+        if s.status_code == 200 and s.json().get("status") == "completed":
+            break
+        time.sleep(POLL_INTERVAL)
+    else:
+        last = s.json() if s.status_code == 200 else s.text
+        pytest.fail(
+            f"PDF indexing did not complete within {RAG_PROCESS_TIMEOUT}s. "
+            f"Last status response: {last}"
+        )
+
+    # 3. Chat completion referencing the uploaded file
+    r = auth_client.post(
+        f"{auth_client.base_url}/api/chat/completions",
+        json={
+            "model": gemma_model_id,
+            "messages": [
+                {"role": "user", "content": "Please summarise the document."}
+            ],
+            "files": [{"type": "file", "id": file_id}],
+        },
+    )
+    assert r.status_code == 200, f"chat/completions (RAG) returned {r.status_code}: {r.text}"
+    content = r.json()["choices"][0]["message"]["content"]
+    assert "creative commons" in content.lower(), (
+        f"Expected 'creative commons' in RAG response, got: {content!r}"
+    )

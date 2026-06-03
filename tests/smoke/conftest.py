@@ -167,3 +167,10 @@ def audio_path() -> pathlib.Path:
     """Absolute path to the fixture MP3 file."""
     return FIXTURES_DIR / "audio.mp3"
 
+
+@pytest.fixture(scope="session")
+def rag_pdf_path() -> pathlib.Path:
+    """Absolute path to the fixture PDF used for the RAG test."""
+    return FIXTURES_DIR / "CC-BY-SA-4.0.pdf"
+
+
