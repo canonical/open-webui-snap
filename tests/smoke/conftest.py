@@ -1,9 +1,14 @@
+import base64
 import os
+import pathlib
 import subprocess
 import time
 
 import pytest
 import requests
+
+# Directory that holds fixture files committed to the repo
+FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
 # How long to wait for the server to become healthy (seconds)
 HEALTH_TIMEOUT = 600   # 10 min — model cold-start can be slow
@@ -120,4 +125,45 @@ def pinned_version():
         if line.lower().startswith("open-webui=="):
             return line.split("==", 1)[1].strip()
     pytest.fail(f"Could not find open-webui version in {req_file}")
+
+
+@pytest.fixture(scope="session")
+def gemma_model_id(auth_client):
+    """Poll GET /api/models until a gemma model appears; return its id.
+
+    Used by both test_gemma4_model_registered and the step-5 prompt tests.
+    Hard cap: MODELS_TIMEOUT (15 min) per the smoke-test plan.
+    """
+    deadline = time.monotonic() + MODELS_TIMEOUT
+    while time.monotonic() < deadline:
+        r = auth_client.get(f"{auth_client.base_url}/api/models")
+        if r.status_code == 200:
+            models = r.json().get("data", [])
+            for m in models:
+                if "gemma" in m.get("id", "").lower():
+                    return m["id"]
+        time.sleep(POLL_INTERVAL)
+
+    r = auth_client.get(f"{auth_client.base_url}/api/models")
+    available = (
+        [m.get("id") for m in r.json().get("data", [])]
+        if r.status_code == 200
+        else [f"(HTTP {r.status_code})"]
+    )
+    pytest.fail(
+        f"No gemma model appeared in /api/models within {MODELS_TIMEOUT}s. "
+        f"Models visible at timeout: {available}"
+    )
+
+
+@pytest.fixture(scope="session")
+def image_b64() -> str:
+    """Base64-encoded content of the fixture JPEG (no data-URI prefix)."""
+    return base64.b64encode((FIXTURES_DIR / "circle.jpg").read_bytes()).decode()
+
+
+@pytest.fixture(scope="session")
+def audio_path() -> pathlib.Path:
+    """Absolute path to the fixture MP3 file."""
+    return FIXTURES_DIR / "audio.mp3"
 

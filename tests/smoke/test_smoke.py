@@ -38,47 +38,65 @@ def test_version_matches_requirements(auth_client, pinned_version):
     )
 
 
-def test_gemma4_model_registered(auth_client):
+def test_gemma4_model_registered(gemma_model_id):
     """GET /api/models eventually lists a gemma model (OpenAI-compatible endpoint)."""
-    deadline = time.monotonic() + MODELS_TIMEOUT
-    while time.monotonic() < deadline:
-        r = auth_client.get(f"{auth_client.base_url}/api/models")
-        if r.status_code == 200:
-            models = r.json().get("data", [])
-            gemma_models = [m for m in models if "gemma" in m.get("id", "").lower()]
-            if gemma_models:
-                return  # at least one gemma model registered — pass
-        time.sleep(POLL_INTERVAL)
-
-    # Timed out — surface what was visible
-    r = auth_client.get(f"{auth_client.base_url}/api/models")
-    available = (
-        [m.get("id") for m in r.json().get("data", [])]
-        if r.status_code == 200
-        else [f"(HTTP {r.status_code})"]
-    )
-    pytest.fail(
-        f"No gemma model appeared in /api/models within {MODELS_TIMEOUT}s. "
-        f"Models visible at timeout: {available}"
-    )
+    assert gemma_model_id, "No gemma model ID returned"
 
 
-@pytest.mark.skip(reason="step 5")
-def test_text_prompt(client):
+def test_text_prompt(auth_client, gemma_model_id):
     """POST /api/chat/completions with a text message returns a non-empty reply."""
-    pass
+    r = auth_client.post(
+        f"{auth_client.base_url}/api/chat/completions",
+        json={
+            "model": gemma_model_id,
+            "messages": [{"role": "user", "content": "Reply with the single word PONG."}],
+        },
+    )
+    assert r.status_code == 200, f"chat/completions returned {r.status_code}: {r.text}"
+    content = r.json()["choices"][0]["message"]["content"]
+    assert content.strip(), "Text prompt returned an empty response"
 
 
-@pytest.mark.skip(reason="step 5")
-def test_image_prompt(client):
+def test_image_prompt(auth_client, gemma_model_id, image_b64):
     """POST /api/chat/completions with an image_url content part returns a non-empty reply."""
-    pass
+    r = auth_client.post(
+        f"{auth_client.base_url}/api/chat/completions",
+        json={
+            "model": gemma_model_id,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this image in one sentence."},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    assert r.status_code == 200, f"chat/completions (image) returned {r.status_code}: {r.text}"
+    content = r.json()["choices"][0]["message"]["content"]
+    assert content.strip(), "Image prompt returned an empty response"
+    assert "circle" in content.lower(), (
+        f"Expected 'circle' in image response, got: {content!r}"
+    )
 
 
-@pytest.mark.skip(reason="step 5")
-def test_audio_transcription(client):
+def test_audio_transcription(auth_client, audio_path):
     """POST /api/v1/audio/transcriptions with fixture WAV returns a transcript containing 'fox'."""
-    pass
+    with open(audio_path, "rb") as fh:
+        r = auth_client.post(
+            f"{auth_client.base_url}/api/v1/audio/transcriptions",
+            files={"file": ("audio.mp3", fh, "audio/mpeg")},
+        )
+    assert r.status_code == 200, f"audio/transcriptions returned {r.status_code}: {r.text}"
+    transcript = r.json().get("text", "")
+    assert "fox" in transcript.lower(), (
+        f"Expected 'fox' in transcript, got: {transcript!r}"
+    )
 
 
 @pytest.mark.skip(reason="step 6")
