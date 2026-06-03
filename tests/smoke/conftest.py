@@ -6,7 +6,9 @@ import pytest
 import requests
 
 # How long to wait for the server to become healthy (seconds)
-HEALTH_TIMEOUT = 600  # 10 min — model cold-start can be slow
+HEALTH_TIMEOUT = 600   # 10 min — model cold-start can be slow
+# How long to wait for gemma4 model to appear in /api/models (seconds)
+MODELS_TIMEOUT = 900   # 15 min hard cap per smoke-test plan
 POLL_INTERVAL = 5
 
 ADMIN_NAME = "Smoke Admin"
@@ -89,3 +91,33 @@ def admin_token(client, server_ready):
     token = data.get("token")
     assert token, f"No 'token' key in signup response: {data}"
     return token
+
+
+@pytest.fixture(scope="session")
+def auth_client(client, admin_token):
+    """requests.Session with the admin Bearer token pre-set."""
+    client.headers.update({"Authorization": f"Bearer {admin_token}"})
+    return client
+
+
+@pytest.fixture(scope="session")
+def pinned_version():
+    """Read the open-webui version pinned in dependencies/requirements.txt.
+
+    Navigates from this file's location (tests/smoke/) up to the repo root.
+    Returns a plain version string, e.g. '0.9.2'.
+    """
+    import pathlib
+    req_file = (
+        pathlib.Path(__file__).parent  # tests/smoke/
+        .parent                        # tests/
+        .parent                        # repo root
+        / "dependencies"
+        / "requirements.txt"
+    )
+    for line in req_file.read_text().splitlines():
+        line = line.strip()
+        if line.lower().startswith("open-webui=="):
+            return line.split("==", 1)[1].strip()
+    pytest.fail(f"Could not find open-webui version in {req_file}")
+
