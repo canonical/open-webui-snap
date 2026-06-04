@@ -32,6 +32,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Python Venv
+        run: |
+          sudo apt-get install -y python3-venv
+
       - name: Run smoke tests
         run: ./tests/run-smoke-tests.sh --channel latest/edge
 
