@@ -29,3 +29,20 @@ jobs:
       publish-channel: latest/edge/pr-${{ github.event.pull_request.number }} # Add track if needed, e.g., 24/latest/edge/pr-#
     secrets:
       store-credentials: ${{ secrets.STORE_LOGIN }}
+
+  smoke-test:
+    needs: build-and-publish
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - [ self-hosted, amd64, noble, medium ]
+          - [ self-hosted, arm64, noble, medium ]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run smoke tests
+        run: ./tests/run-smoke-tests.sh --channel latest/edge/pr-${{ github.event.pull_request.number }}
+
