@@ -30,28 +30,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install open-webui snap
-        run: sudo snap install open-webui --channel=${{ steps.channel.outputs.channel }}
-
-      - name: Install gemma4 snap
-        run: sudo snap install gemma4 --channel=stable
-
-      - name: Connect snap interface
-        run: sudo snap connect open-webui:config gemma4:open-webui
-
-      - name: Set up Python venv
-        run: |
-          python3 -m venv .venv
-          .venv/bin/pip install -r tests/smoke/requirements.txt
-
       - name: Run smoke tests
-        run: .venv/bin/pytest tests/smoke/ -v
-
-      - name: Dump logs on failure
-        if: failure()
-        run: |
-          echo "=== journalctl snap.open-webui.server ==="
-          journalctl -u snap.open-webui.server --no-pager -n 500 || true
-          echo "=== snap logs open-webui ==="
-          snap logs open-webui -n 100 || true
+        run: ./tests/run-smoke-tests.sh --channel ${{ steps.channel.outputs.channel }}
 
