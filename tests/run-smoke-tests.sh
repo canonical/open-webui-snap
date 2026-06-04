@@ -52,8 +52,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ ! -x "${REPO_ROOT}/.venv/bin/python3" ]]; then
   python3 -m venv "${REPO_ROOT}/.venv"
 fi
-PYTHON="${REPO_ROOT}/.venv/bin/python3"
-PYTEST="${REPO_ROOT}/.venv/bin/pytest"
+source "${REPO_ROOT}/.venv/bin/activate"
 
 # ---------------------------------------------------------------------------
 # Cleanup: remove snaps we installed (restores host to prior state)
@@ -97,11 +96,11 @@ sudo snap connect open-webui:config gemma4:open-webui
 # Run tests
 # ---------------------------------------------------------------------------
 echo "=== Installing test dependencies ==="
-"$PYTHON" -m pip install --quiet -r "$REPO_ROOT/tests/smoke/requirements.txt"
+python3 -m pip install --quiet -r "$REPO_ROOT/tests/smoke/requirements.txt"
 
 echo "=== Running smoke tests ==="
 cd "$REPO_ROOT"
-"$PYTEST" tests/smoke/ -v
+pytest tests/smoke/ -v
 EXIT_CODE=$?
 
 # ---------------------------------------------------------------------------
