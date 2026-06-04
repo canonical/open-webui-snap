@@ -1,4 +1,5 @@
 import base64
+import datetime
 import os
 import pathlib
 import subprocess
@@ -11,7 +12,9 @@ import requests
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
 # How long to wait for the server to become healthy (seconds)
-HEALTH_TIMEOUT = 600   # 10 min — model cold-start can be slow
+# First-time installs download embedding models from HuggingFace, which can be
+# slow — allow up to 20 min so CI and local first-runs don't time out.
+HEALTH_TIMEOUT = 1200  # 20 min
 # How long to wait for gemma4 model to appear in /api/models (seconds)
 MODELS_TIMEOUT = 900   # 15 min hard cap per smoke-test plan
 POLL_INTERVAL = 5
@@ -19,6 +22,10 @@ POLL_INTERVAL = 5
 ADMIN_NAME = "Smoke Admin"
 ADMIN_EMAIL = "admin@smoke.test"
 ADMIN_PASSWORD = "SmokeTest1234!"
+
+# Record when this test session started so journalctl can be scoped to it,
+# avoiding false "Traceback" hits from previous runs on the same host.
+_SESSION_START = datetime.datetime.now(datetime.timezone.utc)
 
 
 @pytest.fixture(scope="session")
@@ -62,11 +69,15 @@ def server_ready(base_url):
 
 
 def _get_journal(lines: int = 500) -> str:
+    # Scope to logs produced since this test session started so that tracebacks
+    # from previous runs on the same host don't cause false failures.
+    since = _SESSION_START.strftime("%Y-%m-%d %H:%M:%S")
     result = subprocess.run(
         [
             "journalctl",
             "-u", "snap.open-webui.server",
             "--no-pager",
+            "--since", since,
             "-n", str(lines),
         ],
         capture_output=True,
@@ -133,23 +144,38 @@ def gemma_model_id(auth_client):
 
     Used by both test_gemma4_model_registered and the step-5 prompt tests.
     Hard cap: MODELS_TIMEOUT (15 min) per the smoke-test plan.
+
+    The background service that registers the gemma4 endpoint into the
+    Open WebUI database triggers a server restart.  We therefore swallow
+    any RequestException (ConnectionError, etc.) and keep retrying so that
+    a transient "connection refused" during the restart window does not
+    abort the poll prematurely.
     """
     deadline = time.monotonic() + MODELS_TIMEOUT
     while time.monotonic() < deadline:
-        r = auth_client.get(f"{auth_client.base_url}/api/models")
-        if r.status_code == 200:
-            models = r.json().get("data", [])
-            for m in models:
-                if "gemma" in m.get("id", "").lower():
-                    return m["id"]
+        try:
+            r = auth_client.get(f"{auth_client.base_url}/api/models", timeout=10)
+            if r.status_code == 200:
+                models = r.json().get("data", [])
+                for m in models:
+                    if "gemma" in m.get("id", "").lower():
+                        return m["id"]
+        except requests.RequestException:
+            # Server is temporarily unreachable (e.g. restarting after the
+            # gemma4 config import).  Sleep and retry.
+            pass
         time.sleep(POLL_INTERVAL)
 
-    r = auth_client.get(f"{auth_client.base_url}/api/models")
-    available = (
-        [m.get("id") for m in r.json().get("data", [])]
-        if r.status_code == 200
-        else [f"(HTTP {r.status_code})"]
-    )
+    # Final diagnostic attempt (best-effort; may also fail if still down).
+    try:
+        r = auth_client.get(f"{auth_client.base_url}/api/models", timeout=10)
+        available = (
+            [m.get("id") for m in r.json().get("data", [])]
+            if r.status_code == 200
+            else [f"(HTTP {r.status_code})"]
+        )
+    except requests.RequestException as exc:
+        available = [f"(request failed: {exc})"]
     pytest.fail(
         f"No gemma model appeared in /api/models within {MODELS_TIMEOUT}s. "
         f"Models visible at timeout: {available}"

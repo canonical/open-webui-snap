@@ -1,0 +1,57 @@
+name: Smoke test
+
+on:
+  workflow_run:
+    workflows: ["Build PR when labeled", "Build main branch"]
+    types: [completed]
+
+jobs:
+  smoke:
+    if: github.event.workflow_run.conclusion == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - [self-hosted, amd64, noble, medium]
+          - [self-hosted, arm64, noble, medium]
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Derive snap channel
+        id: channel
+        run: |
+          PR="${{ github.event.workflow_run.pull_requests[0].number }}"
+          if [ -n "$PR" ]; then
+            echo "channel=latest/edge/pr-${PR}" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=latest/edge" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install open-webui snap
+        run: sudo snap install open-webui --channel=${{ steps.channel.outputs.channel }}
+
+      - name: Install gemma4 snap
+        run: sudo snap install gemma4 --channel=stable
+
+      - name: Connect snap interface
+        run: sudo snap connect open-webui:config gemma4:open-webui
+
+      - name: Set up Python venv
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r tests/smoke/requirements.txt
+
+      - name: Run smoke tests
+        run: .venv/bin/pytest tests/smoke/ -v
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "=== journalctl snap.open-webui.server ==="
+          journalctl -u snap.open-webui.server --no-pager -n 500 || true
+          echo "=== snap logs open-webui ==="
+          snap logs open-webui -n 100 || true
+

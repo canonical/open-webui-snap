@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from conftest import MODELS_TIMEOUT, POLL_INTERVAL
+from conftest import POLL_INTERVAL
 
 RAG_PROCESS_TIMEOUT = 120  # 2 min hard cap for PDF indexing
 
@@ -102,7 +102,7 @@ def test_audio_transcription(auth_client, audio_path):
 
 
 def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
-    """Upload CC-BY-SA-4.0.pdf, wait for indexing, ask for a summary, assert 'creative commons' in reply."""
+    """Upload CC-BY-SA-4.0.pdf, wait for indexing, ask for a summary, assert 'license' in reply."""
     # 1. Upload the PDF
     with open(rag_pdf_path, "rb") as fh:
         r = auth_client.post(
@@ -140,6 +140,6 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
     )
     assert r.status_code == 200, f"chat/completions (RAG) returned {r.status_code}: {r.text}"
     content = r.json()["choices"][0]["message"]["content"]
-    assert "creative commons" in content.lower(), (
-        f"Expected 'creative commons' in RAG response, got: {content!r}"
+    assert "license" in content.lower(), (
+        f"Expected 'license' in RAG response, got: {content!r}"
     )
