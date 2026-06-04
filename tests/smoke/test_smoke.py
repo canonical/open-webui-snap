@@ -51,6 +51,12 @@ def test_text_prompt(auth_client, gemma_model_id):
         f"{auth_client.base_url}/api/chat/completions",
         json={
             "model": gemma_model_id,
+            # Use a "local:" chat_id so Open WebUI treats this as a temporary
+            # (non-persisted) chat.  Without any chat_id the metadata dict
+            # contains {"chat_id": None}, and OW 0.9.5's get_event_emitter()
+            # crashes because dict.get("chat_id", "") still returns None when
+            # the key exists — None.startswith() raises AttributeError → 400.
+            "chat_id": "local:smoke-text",
             "messages": [{"role": "user", "content": "Reply with the single word PONG."}],
         },
     )
@@ -65,6 +71,7 @@ def test_image_prompt(auth_client, gemma_model_id, image_b64):
         f"{auth_client.base_url}/api/chat/completions",
         json={
             "model": gemma_model_id,
+            "chat_id": "local:smoke-image",
             "messages": [
                 {
                     "role": "user",
@@ -132,6 +139,7 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
         f"{auth_client.base_url}/api/chat/completions",
         json={
             "model": gemma_model_id,
+            "chat_id": "local:smoke-rag",
             "messages": [
                 {"role": "user", "content": "Please summarise the document."}
             ],
