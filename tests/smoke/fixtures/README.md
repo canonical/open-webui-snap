@@ -1,6 +1,6 @@
 # Fixtures
 
-## audio.wav
+## audio.mp3
 
 Source: https://commons.wikimedia.org/wiki/File:Audio_Sample_-_The_Quick_Brown_Fox_Jumps_Over_The_Lazy_Dog.ogg
 Author: RussmanJr

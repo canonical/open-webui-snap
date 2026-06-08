@@ -16,12 +16,13 @@ set -euo pipefail
 SNAP_FILE=""
 SNAP_CHANNEL=""
 GEMMA4_CHANNEL="stable"
+DO_CLEANUP=false
 
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 usage() {
-  echo "Usage: $0 (--snap <file> | --channel <channel>) [--gemma4-channel <channel>]" >&2
+  echo "Usage: $0 (--snap <file> | --channel <channel>) [--gemma4-channel <channel>] [--cleanup]" >&2
   exit 1
 }
 
@@ -30,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --snap)            SNAP_FILE="$2";         shift 2 ;;
     --channel)         SNAP_CHANNEL="$2";      shift 2 ;;
     --gemma4-channel)  GEMMA4_CHANNEL="$2";    shift 2 ;;
+    --cleanup)         DO_CLEANUP=true;         shift ;;
     *)                 usage ;;
   esac
 done
@@ -64,16 +66,15 @@ cleanup() {
   echo "=== Removing gemma4 ==="
   sudo snap remove gemma4 2>/dev/null || true
 }
-trap cleanup EXIT
+
+if [[ "$DO_CLEANUP" == true ]]; then
+  trap cleanup EXIT
+fi
 
 # ---------------------------------------------------------------------------
 # Remove existing installations so we start clean
 # ---------------------------------------------------------------------------
-echo "=== Removing existing open-webui (if installed) ==="
-sudo snap remove open-webui 2>/dev/null || true
-
-echo "=== Removing existing gemma4 (if installed) ==="
-sudo snap remove gemma4 2>/dev/null || true
+cleanup
 
 # ---------------------------------------------------------------------------
 # Install snaps
@@ -104,7 +105,7 @@ pytest tests/smoke/ -v
 EXIT_CODE=$?
 
 # ---------------------------------------------------------------------------
-# Dump logs on failure (before cleanup trap fires)
+# Dump logs on failure
 # ---------------------------------------------------------------------------
 if [[ $EXIT_CODE -ne 0 ]]; then
   echo ""
