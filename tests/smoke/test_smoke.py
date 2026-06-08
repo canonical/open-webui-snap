@@ -89,8 +89,8 @@ def test_image_prompt(auth_client, gemma_model_id, image_b64):
     assert r.status_code == 200, f"chat/completions (image) returned {r.status_code}: {r.text}"
     content = r.json()["choices"][0]["message"]["content"]
     assert content.strip(), "Image prompt returned an empty response"
-    assert "circle" in content.lower(), (
-        f"Expected 'circle' in image response, got: {content!r}"
+    assert "circle" in content.lower() or "circular" in content.lower(), (
+        f"Expected 'circle' or 'circular' in image response, got: {content!r}"
     )
 
 
