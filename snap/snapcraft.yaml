@@ -59,7 +59,15 @@ parts:
       
       # Install CPU-only pytorch
       pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-    
+
+      # Pre-download the default RAG embedding model
+      # (sentence-transformers/all-MiniLM-L6-v2) into the snap so that it does
+      # not have to be fetched from huggingface.co on first startup.
+      # Only the files required to load the model with the safetensors backend
+      # are downloaded to keep the snap size down. The resulting cache uses the
+      # standard huggingface_hub layout so Open WebUI resolves it offline.
+      HF_HUB_DISABLE_PROGRESS_BARS=1 python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='sentence-transformers/all-MiniLM-L6-v2', cache_dir='$CRAFT_PART_INSTALL/embedding-models', allow_patterns=['*.json', '*.txt', 'model.safetensors'])"
+
   version:
     after:
       - open-webui
@@ -105,6 +113,12 @@ apps:
       DATA_DIR: $SNAP_COMMON/data
       STATIC_DIR: $SNAP_DATA/static
       ENABLE_VERSION_UPDATE_CHECK: "false"
+      # huggingface_hub cache directory. It must be writable so the bundled
+      # model can be copied here on install (see the install hook) and so Open
+      # WebUI can update it or download other models at runtime. Open WebUI's
+      # get_model_path() leaves snapshot_download's cache_dir unset, so it
+      # falls back to HF_HUB_CACHE.
+      HF_HUB_CACHE: $SNAP_COMMON/cache/huggingface/hub
 
   import-shared-configs:
     command: bin/import-shared-configs.py

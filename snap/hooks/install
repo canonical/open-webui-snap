@@ -3,3 +3,18 @@ set -e
 
 snapctl set host="127.0.0.1"
 snapctl set port="8080"
+
+# Seed the writable huggingface cache with the RAG embedding model that was
+# bundled into the snap at build time, so it does not have to be downloaded
+# from huggingface.co on first startup. This only happens on initial install;
+# afterwards the model lives in writable storage and can be updated by Open
+# WebUI.
+HF_HUB_CACHE="${HF_HUB_CACHE:-$SNAP_COMMON/cache/huggingface/hub}"
+SEED_DIR="$SNAP/embedding-models"
+MODEL_DIR="models--sentence-transformers--all-MiniLM-L6-v2"
+
+if [ -d "$SEED_DIR/$MODEL_DIR" ]; then
+  mkdir -p "$HF_HUB_CACHE"
+  cp -a "$SEED_DIR/$MODEL_DIR" "$HF_HUB_CACHE/"
+fi
+
