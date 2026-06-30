@@ -232,9 +232,15 @@ def get_config_value(cursor, key, default):
     if row is None or row[0] is None:
         return default
     try:
-        return json.loads(row[0])
+        value = json.loads(row[0])
     except (TypeError, json.JSONDecodeError):
         return default
+    # A stored JSON literal `null` decodes to None, which would break callers
+    # that expect a list/dict (e.g. len(base_urls)).  Normalize it back to the
+    # provided default.
+    if value is None:
+        return default
+    return value
 
 
 def set_config_value(cursor, key, value, updated_at):
@@ -246,6 +252,32 @@ def set_config_value(cursor, key, value, updated_at):
         "value = excluded.value, updated_at = excluded.updated_at",
         (key, payload, updated_at),
     )
+
+
+def config_table_is_key_value(cursor) -> bool:
+    """
+    Return True only when the `config` table uses the new key/value schema
+    (columns: "key", "value", ...).
+
+    This guards against the upgrade scenario where a user moves from
+    open-webui 0.9.x (which stored the whole config as a single JSON blob in
+    a `data` column) to 0.10.x.  On first launch after such an upgrade the
+    table may still be in the old schema until open-webui's own database
+    migrations have run.  Writing to it before that point would either fail
+    or corrupt the data that those migrations expect, so we simply skip and
+    let open-webui migrate first; we run again on a later invocation.
+    """
+    try:
+        cursor.execute("PRAGMA table_info(config)")
+    except sqlite3.Error:
+        return False
+
+    columns = {row[1] for row in cursor.fetchall()}
+    if not columns:
+        # No config table at all.
+        return False
+
+    return "key" in columns and "value" in columns
 
 
 def build_section(cursor, key_map):
@@ -273,6 +305,15 @@ def check_and_sync():
     conn = sqlite3.connect(DB_PATH)
     try:
         cursor = conn.cursor()
+
+        # Only proceed once open-webui's own migrations have converted the
+        # config table to the new key/value schema.  If it is still in the
+        # old 0.9.x `data`-blob form, bail out so we don't interfere with the
+        # pending migrations; we will run again on a later invocation.
+        if not config_table_is_key_value(cursor):
+            print("Config table is not in the new key/value schema yet "
+                  "(open-webui migrations may be pending), exiting.")
+            sys.exit(0)
 
         # The config table is a key/value store.  Assemble the openai and
         # ollama "sections" from their individual rows so the rest of the
