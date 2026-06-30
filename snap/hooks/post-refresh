@@ -1,13 +1,9 @@
 #!/bin/bash
 set -e
 
-snapctl set host="127.0.0.1"
-snapctl set port="8080"
-
-# Seed the writable huggingface cache with the RAG embedding model that was
-# bundled into the snap at build time, so it does not have to be downloaded
-# from huggingface.co on first startup. The same copy is performed by the
-# post-refresh hook so that a new snap revision can deploy an updated model.
+# Refresh the writable huggingface cache with the RAG embedding model that was
+# bundled into the (new) snap revision, so that upgrading the snap can deploy
+# an updated model. This mirrors the copy performed by the install hook.
 HF_HUB_CACHE="${HF_HUB_CACHE:-$SNAP_COMMON/cache/huggingface/hub}"
 SEED_DIR="$SNAP/embedding-models"
 MODEL_DIR="models--sentence-transformers--all-MiniLM-L6-v2"

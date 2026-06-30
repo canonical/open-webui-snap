@@ -113,12 +113,8 @@ apps:
       DATA_DIR: $SNAP_COMMON/data
       STATIC_DIR: $SNAP_DATA/static
       ENABLE_VERSION_UPDATE_CHECK: "false"
-      # huggingface_hub cache directory. It must be writable so the bundled
-      # model can be copied here on install (see the install hook) and so Open
-      # WebUI can update it or download other models at runtime. Open WebUI's
-      # get_model_path() leaves snapshot_download's cache_dir unset, so it
-      # falls back to HF_HUB_CACHE.
       HF_HUB_CACHE: $SNAP_COMMON/cache/huggingface/hub
+      RAG_EMBEDDING_MODEL_AUTO_UPDATE: "false"
 
   import-shared-configs:
     command: bin/import-shared-configs.py
