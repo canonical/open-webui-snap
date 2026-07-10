@@ -1,31 +1,14 @@
 import base64
-import datetime
 import os
 import pathlib
-import subprocess
-import time
 
 import pytest
 import requests
 
+import owui
+
 # Directory that holds fixture files committed to the repo
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
-
-# How long to wait for the server to become healthy (seconds)
-# First-time installs download embedding models from HuggingFace, which can be
-# slow — allow up to 20 min so CI and local first-runs don't time out.
-HEALTH_TIMEOUT = 1200  # 20 min
-# How long to wait for gemma4 model to appear in /api/models (seconds)
-MODELS_TIMEOUT = 900   # 15 min hard cap per smoke-test plan
-POLL_INTERVAL = 5
-
-ADMIN_NAME = "Smoke Admin"
-ADMIN_EMAIL = "admin@smoke.test"
-ADMIN_PASSWORD = "SmokeTest1234!"
-
-# Record when this test session started so journalctl can be scoped to it,
-# avoiding false "Traceback" hits from previous runs on the same host.
-_SESSION_START = datetime.datetime.now(datetime.timezone.utc)
 
 
 @pytest.fixture(scope="session")
@@ -48,42 +31,13 @@ def server_ready(base_url):
       - healthy (bool): True when /health returned 200
       - journal (str): recent journalctl output for snap.open-webui.server
     """
-    deadline = time.monotonic() + HEALTH_TIMEOUT
-    last_exc = None
-
-    while time.monotonic() < deadline:
-        try:
-            r = requests.get(f"{base_url}/health", timeout=5)
-            if r.status_code == 200:
-                journal = _get_journal()
-                return {"healthy": True, "journal": journal}
-        except requests.RequestException as exc:
-            last_exc = exc
-        time.sleep(POLL_INTERVAL)
-
-    journal = _get_journal()
-    pytest.fail(
-        f"Server did not become healthy within {HEALTH_TIMEOUT}s. "
-        f"Last error: {last_exc}\n\nJournal tail:\n{journal}"
-    )
-
-
-def _get_journal(lines: int = 500) -> str:
-    # Scope to logs produced since this test session started so that tracebacks
-    # from previous runs on the same host don't cause false failures.
-    since = _SESSION_START.strftime("%Y-%m-%d %H:%M:%S")
-    result = subprocess.run(
-        [
-            "journalctl",
-            "-u", "snap.open-webui.server",
-            "--no-pager",
-            "--since", since,
-            "-n", str(lines),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout
+    result = owui.wait_for_health(base_url)
+    if result is None:
+        pytest.fail(
+            f"Server did not become healthy within {owui.HEALTH_TIMEOUT}s.\n\n"
+            f"Journal tail:\n{owui.get_journal()}"
+        )
+    return result
 
 
 @pytest.fixture(scope="session")
@@ -92,20 +46,11 @@ def admin_token(client, server_ready):
 
     Open WebUI lets the very first signup become admin with no prior auth.
     """
-    resp = client.post(
-        f"{client.base_url}/api/v1/auths/signup",
-        json={
-            "name": ADMIN_NAME,
-            "email": ADMIN_EMAIL,
-            "password": ADMIN_PASSWORD,
-        },
-    )
+    resp, token = owui.signup_admin(client, client.base_url)
     assert resp.status_code == 200, (
         f"Admin signup returned {resp.status_code}: {resp.text}"
     )
-    data = resp.json()
-    token = data.get("token")
-    assert token, f"No 'token' key in signup response: {data}"
+    assert token, f"No 'token' key in signup response: {resp.text}"
     return token
 
 
@@ -120,22 +65,14 @@ def auth_client(client, admin_token):
 def pinned_version():
     """Read the open-webui version pinned in dependencies/requirements.txt.
 
-    Navigates from this file's location (tests/smoke/) up to the repo root.
     Returns a plain version string, e.g. '0.9.2'.
     """
-    import pathlib
-    req_file = (
-        pathlib.Path(__file__).parent  # tests/smoke/
-        .parent                        # tests/
-        .parent                        # repo root
-        / "dependencies"
-        / "requirements.txt"
-    )
-    for line in req_file.read_text().splitlines():
-        line = line.strip()
-        if line.lower().startswith("open-webui=="):
-            return line.split("==", 1)[1].strip()
-    pytest.fail(f"Could not find open-webui version in {req_file}")
+    version = owui.read_pinned_version()
+    if version is None:
+        pytest.fail(
+            "Could not find open-webui version in dependencies/requirements.txt"
+        )
+    return version
 
 
 @pytest.fixture(scope="session")
@@ -144,42 +81,13 @@ def gemma_model_id(auth_client):
 
     Used by both test_gemma4_model_registered and the step-5 prompt tests.
     Hard cap: MODELS_TIMEOUT (15 min) per the smoke-test plan.
-
-    The background service that registers the gemma4 endpoint into the
-    Open WebUI database triggers a server restart.  We therefore swallow
-    any RequestException (ConnectionError, etc.) and keep retrying so that
-    a transient "connection refused" during the restart window does not
-    abort the poll prematurely.
     """
-    deadline = time.monotonic() + MODELS_TIMEOUT
-    while time.monotonic() < deadline:
-        try:
-            r = auth_client.get(f"{auth_client.base_url}/api/models", timeout=10)
-            if r.status_code == 200:
-                models = r.json().get("data", [])
-                for m in models:
-                    if "gemma" in m.get("id", "").lower():
-                        return m["id"]
-        except requests.RequestException:
-            # Server is temporarily unreachable (e.g. restarting after the
-            # gemma4 config import).  Sleep and retry.
-            pass
-        time.sleep(POLL_INTERVAL)
-
-    # Final diagnostic attempt (best-effort; may also fail if still down).
-    try:
-        r = auth_client.get(f"{auth_client.base_url}/api/models", timeout=10)
-        available = (
-            [m.get("id") for m in r.json().get("data", [])]
-            if r.status_code == 200
-            else [f"(HTTP {r.status_code})"]
+    model_id = owui.wait_for_gemma_model(auth_client, auth_client.base_url)
+    if model_id is None:
+        pytest.fail(
+            f"No gemma model appeared in /api/models within {owui.MODELS_TIMEOUT}s."
         )
-    except requests.RequestException as exc:
-        available = [f"(request failed: {exc})"]
-    pytest.fail(
-        f"No gemma model appeared in /api/models within {MODELS_TIMEOUT}s. "
-        f"Models visible at timeout: {available}"
-    )
+    return model_id
 
 
 @pytest.fixture(scope="session")
@@ -198,5 +106,3 @@ def audio_path() -> pathlib.Path:
 def rag_pdf_path() -> pathlib.Path:
     """Absolute path to the fixture PDF used for the RAG test."""
     return FIXTURES_DIR / "CC-BY-SA-4.0.pdf"
-
-

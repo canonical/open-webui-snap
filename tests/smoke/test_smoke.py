@@ -1,8 +1,9 @@
+import subprocess
 import time
 
 import pytest
 
-from conftest import POLL_INTERVAL
+import owui
 
 RAG_PROCESS_TIMEOUT = 120  # 2 min hard cap for PDF indexing
 
@@ -126,7 +127,7 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
         s = auth_client.get(f"{auth_client.base_url}/api/v1/files/{file_id}/process/status")
         if s.status_code == 200 and s.json().get("status") == "completed":
             break
-        time.sleep(POLL_INTERVAL)
+        time.sleep(owui.POLL_INTERVAL)
     else:
         last = s.json() if s.status_code == 200 else s.text
         pytest.fail(
@@ -150,4 +151,26 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
     content = r.json()["choices"][0]["message"]["content"]
     assert "license" in content.lower(), (
         f"Expected 'license' in RAG response, got: {content!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Interface disconnect — must run LAST, after every model-dependent test.
+# ---------------------------------------------------------------------------
+def test_model_disappears_after_disconnect(auth_client, gemma_model_id):
+    """Disconnecting gemma4 removes the model from /api/models.
+
+    The gemma service can take >1 min to notice the disconnect, after which it
+    triggers an Open WebUI restart, so we poll with a generous cap and tolerate
+    connection errors during the restart window.
+    """
+    subprocess.run(
+        ["sudo", "snap", "disconnect", "open-webui:config", "gemma4:open-webui"],
+        check=True,
+    )
+    result = owui.wait_for_model_absent(auth_client, auth_client.base_url)
+    assert result is True, (
+        f"gemma model did not disappear from /api/models within "
+        f"{owui.DISCONNECT_TIMEOUT}s after disconnecting the interface. "
+        f"Models still visible: {result}"
     )
