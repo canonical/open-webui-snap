@@ -52,8 +52,8 @@ parts:
       craftctl default
       
       # Remove GPU-specific pytorch and its dependencies
-      pip install pip-autoremove
-      pip-autoremove torch -y
+      pip list --format=freeze | grep -iE '^(nvidia|cuda|triton)' | cut -d= -f1 | xargs -r pip uninstall -y
+      pip uninstall -y torch
       rm -rf $CRAFT_PART_INSTALL/lib/python*/site-packages/nvidia
       rm -rf $CRAFT_PART_INSTALL/lib/python*/site-packages/torch
       
