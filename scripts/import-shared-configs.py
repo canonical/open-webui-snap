@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-import builtins
 import json
 import os
 import sqlite3
 import subprocess
 import sys
+import time
 
 DB_PATH = os.path.join(os.environ.get("SNAP_COMMON", ""), "data", "webui.db")
 SHARED_CONFIGS_DIR = os.path.join(os.environ.get("SNAP", ""), "shared-configs")
@@ -195,6 +195,107 @@ def add_ollama_entry(section: dict, file_cfg: dict) -> dict:
 # Main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Key/value config table access
+# ---------------------------------------------------------------------------
+#
+# As of open-webui v0.10.x the `config` table is a key/value store:
+#
+#     CREATE TABLE config (
+#         "key" TEXT NOT NULL,
+#         value JSON NOT NULL,
+#         updated_at BIGINT,
+#         PRIMARY KEY ("key")
+#     );
+#
+# Each setting is stored as its own row, e.g. `openai.api_base_urls`,
+# `openai.api_keys`, `openai.api_configs`, `ollama.base_urls`,
+# `ollama.api_configs`.  The values are JSON-encoded.
+
+# Keys that make up the openai/ollama "sections" the rest of this script
+# operates on.
+OPENAI_KEYS = {
+    "api_base_urls": "openai.api_base_urls",
+    "api_keys": "openai.api_keys",
+    "api_configs": "openai.api_configs",
+}
+OLLAMA_KEYS = {
+    "base_urls": "ollama.base_urls",
+    "api_configs": "ollama.api_configs",
+}
+
+
+def get_config_value(cursor, key, default):
+    """Return the JSON-decoded value for *key*, or *default* if absent."""
+    cursor.execute("SELECT value FROM config WHERE \"key\" = ?", (key,))
+    row = cursor.fetchone()
+    if row is None or row[0] is None:
+        return default
+    try:
+        value = json.loads(row[0])
+    except (TypeError, json.JSONDecodeError):
+        return default
+    # A stored JSON literal `null` decodes to None, which would break callers
+    # that expect a list/dict (e.g. len(base_urls)).  Normalize it back to the
+    # provided default.
+    if value is None:
+        return default
+    return value
+
+
+def set_config_value(cursor, key, value, updated_at):
+    """Insert or update *key* with the JSON-encoded *value*."""
+    payload = json.dumps(value)
+    cursor.execute(
+        "INSERT INTO config (\"key\", value, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(\"key\") DO UPDATE SET "
+        "value = excluded.value, updated_at = excluded.updated_at",
+        (key, payload, updated_at),
+    )
+
+
+def config_table_is_key_value(cursor) -> bool:
+    """
+    Return True only when the `config` table uses the new key/value schema
+    (columns: "key", "value", ...).
+
+    This guards against the upgrade scenario where a user moves from
+    open-webui 0.9.x (which stored the whole config as a single JSON blob in
+    a `data` column) to 0.10.x.  On first launch after such an upgrade the
+    table may still be in the old schema until open-webui's own database
+    migrations have run.  Writing to it before that point would either fail
+    or corrupt the data that those migrations expect, so we simply skip and
+    let open-webui migrate first; we run again on a later invocation.
+    """
+    try:
+        cursor.execute("PRAGMA table_info(config)")
+    except sqlite3.Error:
+        return False
+
+    columns = {row[1] for row in cursor.fetchall()}
+    if not columns:
+        # No config table at all.
+        return False
+
+    return "key" in columns and "value" in columns
+
+
+def build_section(cursor, key_map):
+    """Assemble a section dict from the individual config rows."""
+    section = {}
+    for field, key in key_map.items():
+        default = {} if field.endswith("configs") else []
+        section[field] = get_config_value(cursor, key, default)
+    return section
+
+
+def write_section(cursor, section, key_map, updated_at):
+    """Write a section dict back to its individual config rows."""
+    for field, key in key_map.items():
+        if field in section:
+            set_config_value(cursor, key, section[field], updated_at)
+
+
 def check_and_sync():
     # Check if database exists
     if not os.path.exists(DB_PATH):
@@ -205,17 +306,22 @@ def check_and_sync():
     try:
         cursor = conn.cursor()
 
-        # Check if config table has a single entry
-        cursor.execute("SELECT COUNT(*) FROM config")
-        count = cursor.fetchone()[0]
-        if count != 1:
-            print(f"Config table has {count} entries (expected 1), exiting.")
+        # Only proceed once open-webui's own migrations have converted the
+        # config table to the new key/value schema.  If it is still in the
+        # old 0.9.x `data`-blob form, bail out so we don't interfere with the
+        # pending migrations; we will run again on a later invocation.
+        if not config_table_is_key_value(cursor):
+            print("Config table is not in the new key/value schema yet "
+                  "(open-webui migrations may be pending), exiting.")
             sys.exit(0)
 
-        cursor.execute("SELECT id, data FROM config LIMIT 1")
-        row = cursor.fetchone()
-        row_id, data_json = row
-        config = json.loads(data_json)
+        # The config table is a key/value store.  Assemble the openai and
+        # ollama "sections" from their individual rows so the rest of the
+        # logic can keep operating on dicts.
+        config = {
+            "openai": build_section(cursor, OPENAI_KEYS),
+            "ollama": build_section(cursor, OLLAMA_KEYS),
+        }
 
         # Read snap-tagged entries from the database
         db_openai_urls, db_ollama_urls = read_snap_entries_from_db(config)
@@ -238,21 +344,18 @@ def check_and_sync():
         # Apply changes: remove all snap entries, then re-add from shared configs
         print("Changes detected, updating database...")
 
-        if "openai" in config:
-            config["openai"] = remove_snap_entries(config["openai"])
-        if "ollama" in config:
-            config["ollama"] = remove_snap_entries(config["ollama"])
+        config["openai"] = remove_snap_entries(config["openai"])
+        config["ollama"] = remove_snap_entries(config["ollama"])
 
         for file_cfg in shared_openai_cfgs:
-            config.setdefault("openai", {"api_base_urls": [], "api_keys": [], "api_configs": {}})
             config["openai"] = add_openai_entry(config["openai"], file_cfg)
 
         for file_cfg in shared_ollama_cfgs:
-            config.setdefault("ollama", {"base_urls": [], "api_configs": {}})
             config["ollama"] = add_ollama_entry(config["ollama"], file_cfg)
 
-        updated_json = json.dumps(config)
-        cursor.execute("UPDATE config SET data = ? WHERE id = ?", (updated_json, row_id))
+        now = int(time.time())
+        write_section(cursor, config["openai"], OPENAI_KEYS, now)
+        write_section(cursor, config["ollama"], OLLAMA_KEYS, now)
         conn.commit()
         print("Database updated successfully.")
 
