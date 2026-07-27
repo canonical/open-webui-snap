@@ -4,38 +4,62 @@ on:
   push:
     branches: [ main ]
 
-jobs:
-  build-and-publish:
-    uses: canonical/inference-snaps-dev/.github/workflows/build-publish-snap.yaml@v2
-    strategy:
-      fail-fast: false
-      matrix:
-        runner:
-          - [ self-hosted, amd64, noble, medium ]
-          - [ self-hosted, arm64, noble, medium ]
-    with:
-      runner: "${{ toJSON(matrix.runner) }}"
-      publish-channel: 'latest/edge' # Add track if needed, e.g., 24/latest/edge
-    secrets:
-      store-credentials: ${{ secrets.STORE_LOGIN }}
+concurrency:
+  group: ${{ github.workflow }}
 
-  smoke-test:
-    needs: build-and-publish
+jobs:
+  build-publish-test:
     strategy:
       fail-fast: false
       matrix:
-        runner:
-          - [ self-hosted, amd64, noble, medium ]
-          - [ self-hosted, arm64, noble, medium ]
-    runs-on: ${{ matrix.runner }}
+        runs-on:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
     steps:
+      - name: Refresh/Install snapd
+        run: sudo snap refresh snapd || sudo snap install snapd
+
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Build snap
+        id: build
+        uses: canonical/action-build@v1
+
+      - name: Publish to latest/edge
+        uses: canonical/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: latest/edge
+
       - name: Install Python Venv
-        run: |
-          sudo apt-get install -y python3-venv
+        run: sudo apt-get install -y python3-venv
 
       - name: Run smoke tests
-        run: ./tests/run-smoke-tests.sh --channel latest/edge
+        env:
+          OWUI_CHANNEL: latest/edge
+        run: ./tests/smoke/run.sh
 
+      - name: Run upgrade tests
+        env:
+          OWUI_FROM_CHANNEL: latest/stable
+          OWUI_CHANNEL: latest/edge
+        run: ./tests/upgrade/run.sh
+
+  promote-beta:
+    needs: build-publish-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+
+      - name: Promote latest/edge to latest/beta
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN }}
+        run: |
+          snapcraft promote open-webui --yes \
+            --from-channel latest/edge \
+            --to-channel latest/beta
