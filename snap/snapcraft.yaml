@@ -20,6 +20,15 @@ confinement: strict
 
 adopt-info: version
 
+lint:
+  # These torch libraries are loaded at runtime via dlopen rather than being
+  # directly linked, so the library linter incorrectly reports them as unused.
+  ignore:
+    - library:
+        - lib/python3.12/site-packages/torch/lib/libaoti_custom_ops.so
+        - lib/python3.12/site-packages/torch/lib/libtorch_global_deps.so
+        - lib/python3.12/site-packages/torch/lib/libtorchbind_test.so
+
 platforms:
   amd64:
   arm64:
