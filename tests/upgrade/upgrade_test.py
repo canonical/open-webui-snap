@@ -1,19 +1,20 @@
 """Upgrade scenario for the Open WebUI snap.
 
-Runs after the smoke suite (Phase B in tests/run-smoke-tests.sh).  By the time
+Driven by tests/upgrade/run.sh.  By the time
 this module runs, the harness has already:
 
   * removed and purged open-webui,
-  * installed open-webui from the *stable* channel,
+  * installed open-webui from the baseline channel (OWUI_FROM_CHANNEL,
+    default stable),
   * (re)connected open-webui:config <-> gemma4:open-webui.
 
 gemma4 itself stays installed throughout.  These tests run **in file order**
 inside a single pytest session:
 
-  1. stable server healthy
+  1. baseline server healthy
   2. first-signup admin (fresh, purged DB)
-  3. gemma model present on stable
-  4. text prompt works on stable
+  3. gemma model present on the baseline build
+  4. text prompt works on the baseline build
   5. upgrade (refresh) to the provided snap file / channel
   6. fresh login on the upgraded build (old JWT is intentionally not reused)
   7. reported version matches dependencies/requirements.txt
@@ -55,7 +56,7 @@ def _text_prompt(client, model_id, chat_id):
 # Stable install (pre-upgrade)
 # ---------------------------------------------------------------------------
 def test_stable_server_ready(client):
-    """The freshly-installed stable build becomes healthy."""
+    """The freshly-installed baseline build becomes healthy."""
     result = owui.wait_for_health(client.base_url)
     assert result is not None, (
         f"Stable server did not become healthy within {owui.HEALTH_TIMEOUT}s.\n\n"
@@ -74,17 +75,17 @@ def test_stable_admin_signup(client):
 
 
 def test_stable_gemma_model_present(client, state):
-    """A gemma model is registered in /api/models on the stable build."""
+    """A gemma model is registered in /api/models on the baseline build."""
     model_id = owui.wait_for_gemma_model(client, client.base_url)
     assert model_id, (
         f"No gemma model appeared in /api/models within {owui.MODELS_TIMEOUT}s "
-        f"on the stable build."
+        f"on the baseline build."
     )
     state["model_id"] = model_id
 
 
 def test_stable_text_prompt(client, state):
-    """A text prompt returns a non-empty reply on the stable build."""
+    """A text prompt returns a non-empty reply on the baseline build."""
     content = _text_prompt(client, state["model_id"], "local:upgrade-stable-text")
     assert content.strip(), "Text prompt returned an empty response on stable"
 

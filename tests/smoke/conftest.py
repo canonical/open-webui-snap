@@ -1,9 +1,13 @@
 import base64
 import os
 import pathlib
+import sys
 
 import pytest
 import requests
+
+# Make the shared helper module (tests/shared/owui.py) importable.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
 
 import owui
 
