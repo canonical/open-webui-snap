@@ -1,11 +1,17 @@
 name: open-webui
+title: Open WebUI
 
-summary: Open WebUI is a user-friendly AI Interface (Supports Ollama, OpenAI API, ...)
+summary: Open WebUI is a user-friendly AI Interface
 description: |
   Open WebUI is an extensible, feature-rich, and user-friendly self-hosted AI platform designed to operate entirely offline. 
   It supports various LLM runners like Ollama and OpenAI-compatible APIs, with built-in inference engine for RAG, making it a powerful AI deployment solution.
 
-# license: unset # multiple licenses, see NOTICE file
+website: https://openwebui.com/
+source-code: https://github.com/canonical/open-webui-snap
+issues: https://github.com/canonical/open-webui-snap/issues
+contact: https://github.com/canonical/open-webui-snap/issues
+#license: BSD-3-Clause-OpenWebUI # Not supported by snaps yet
+icon: snap/gui/open-webui.png
 
 base: core24
 grade: stable
