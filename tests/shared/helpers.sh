@@ -152,5 +152,5 @@ dump_logs() {
   journalctl -u snap.open-webui.server --no-pager -n 500 || true
   echo ""
   echo "=== snap logs open-webui ==="
-  snap logs open-webui -n 100 || true
+  sudo snap logs open-webui -n 100 || true
 }

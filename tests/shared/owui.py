@@ -186,9 +186,9 @@ def read_pinned_version() -> str:
     Returns a plain version string (e.g. '0.9.2') or None if not found.
     """
     req_file = (
-        pathlib.Path(__file__).parent  # tests/shared/
-        .parent                        # tests/
-        .parent                        # repo root
+        pathlib.Path(__file__).resolve().parent  # tests/shared/
+        .parent                                   # tests/
+        .parent                                   # repo root
         / "dependencies"
         / "requirements.txt"
     )
