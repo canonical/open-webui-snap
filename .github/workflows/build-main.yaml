@@ -12,10 +12,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on:
+        runner:
           - ubuntu-latest
           - ubuntu-24.04-arm
-    runs-on: ${{ matrix.runs-on }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Refresh/Install snapd
         run: sudo snap refresh snapd || sudo snap install snapd
