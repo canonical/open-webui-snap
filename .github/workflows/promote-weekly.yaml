@@ -1,0 +1,34 @@
+name: Weekly promotion
+# Use a strictly scoped STORE_LOGIN_PROMOTE secret. e.g:
+# snapcraft export-login --snaps=open-webui --acls package_access,package_release --channels latest/candidate,latest/stable --expires "2027-01-31T00:00:00Z" promote-only-key.txt
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+
+      - name: Promote latest/candidate to latest/stable
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
+        run: |
+          snapcraft promote open-webui --yes \
+            --from-channel latest/candidate \
+            --to-channel latest/stable
+
+      - name: Promote latest/beta to latest/candidate
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
+        run: |
+          snapcraft promote open-webui --yes \
+            --from-channel latest/beta \
+            --to-channel latest/candidate

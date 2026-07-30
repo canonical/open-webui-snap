@@ -1,4 +1,6 @@
 name: Build main branch
+# This workflow requires a STORE_LOGIN secret that can publish to latest/edge and promote to latest/beta. e.g:
+# snapcraft export-login --snaps=open-webui --acls package_access,package_push,package_update,package_release --channels latest/edge,latest/beta --expires "2027-01-31T00:00:00Z" secret-main.txt
 
 on:
   push:
