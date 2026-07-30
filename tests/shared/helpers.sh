@@ -40,7 +40,9 @@ resolve_config() {
     exit 1
   fi
 
-  [[ -n "$SNAP_FILE" ]] && SNAP_FILE="$(realpath "$SNAP_FILE")"
+  if [[ -n "$SNAP_FILE" ]]; then
+    SNAP_FILE="$(realpath "$SNAP_FILE")"
+  fi
 }
 
 # Return success when OWUI_CLEANUP is set to a truthy value.
