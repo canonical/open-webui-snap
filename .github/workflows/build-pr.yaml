@@ -1,52 +1,53 @@
-name: Build PR when labeled
+name: Build and test PR
 
 on:
   pull_request:
-    types: [ labeled ]
+    branches:
+      - main
 
-permissions:
-  pull-requests: write
+concurrency:
+  group: ${{ github.workflow }}
 
 jobs:
-  remove-label:
-    uses: canonical/inference-snaps-dev/.github/workflows/remove-label.yaml@v2
-    with:
-      label: ${{ vars.PR_BUILD_TRIGGER_LABEL }}
-
-  build-and-publish:
-    needs: remove-label
-    if: github.event.label.name == vars.PR_BUILD_TRIGGER_LABEL
-    uses: canonical/inference-snaps-dev/.github/workflows/build-publish-snap.yaml@v2
+  build-and-test:
     strategy:
       fail-fast: false
       matrix:
         runner:
-          - [ self-hosted, amd64, noble, medium ]
-          - [ self-hosted, arm64, noble, medium ]
-    with:
-      runner: "${{ toJSON(matrix.runner) }}"
-      # Publish to a channel with the pr number in it
-      publish-channel: latest/edge/pr-${{ github.event.pull_request.number }} # Add track if needed, e.g., 24/latest/edge/pr-#
-    secrets:
-      store-credentials: ${{ secrets.STORE_LOGIN }}
-
-  smoke-test:
-    needs: build-and-publish
-    strategy:
-      fail-fast: false
-      matrix:
-        runner:
-          - [ self-hosted, amd64, noble, medium ]
-          - [ self-hosted, arm64, noble, medium ]
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
+      - name: Refresh/Install snapd
+        run: sudo snap refresh snapd || sudo snap install snapd
+
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # Prevent usage of simulated merge commit of PR
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Build snap
+        id: build
+        uses: canonical/action-build@v1
+
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.build.outputs.snap }}
+          archive: false
+          if-no-files-found: error
 
       - name: Install Python Venv
-        run: |
-          sudo apt-get install -y python3-venv
+        run: sudo apt-get install -y python3-venv
 
       - name: Run smoke tests
-        run: ./tests/run-smoke-tests.sh --channel latest/edge/pr-${{ github.event.pull_request.number }}
+        env:
+          OWUI_SNAP: ${{ steps.build.outputs.snap }}
+        run: ./tests/smoke/run.sh
 
+      - name: Run upgrade tests
+        env:
+          OWUI_FROM_CHANNEL: latest/edge
+          OWUI_SNAP: ${{ steps.build.outputs.snap }}
+        run: ./tests/upgrade/run.sh

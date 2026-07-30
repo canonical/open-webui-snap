@@ -363,8 +363,15 @@ def check_and_sync():
         conn.close()
 
     # Restart the service
+    # The restart can fail if other snap changes are in progress, so retry once.
+    # If it still fails 10 seconds later, the snap change is likely a refresh which will restart the service anyway.
     print("Restarting open-webui service...")
-    subprocess.run(["snapctl", "restart", "open-webui"], check=True)
+    try:
+        subprocess.run(["snapctl", "restart", "open-webui"], check=True)
+    except subprocess.CalledProcessError as error:
+        print(f"Restart failed ({error}); retrying in 10 seconds...")
+        time.sleep(10)
+        subprocess.run(["snapctl", "restart", "open-webui"], check=True)
     print("Service restarted.")
 
 
