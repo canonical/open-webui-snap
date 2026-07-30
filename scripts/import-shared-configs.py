@@ -10,15 +10,6 @@ import time
 DB_PATH = os.path.join(os.environ.get("SNAP_COMMON", ""), "data", "webui.db")
 SHARED_CONFIGS_DIR = os.path.join(os.environ.get("SNAP", ""), "shared-configs")
 
-# Marker file used to remember that the server still needs to be restarted.
-# snapctl refuses to restart while another snap change (e.g. an interface
-# connect/disconnect) is in progress, so a restart may fail even though the
-# database has already been updated.  In that case we drop this marker and a
-# later invocation retries the restart even though the configs are in sync.
-RESTART_MARKER = os.path.join(
-    os.environ.get("SNAP_COMMON", ""), ".restart-pending"
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -305,47 +296,6 @@ def write_section(cursor, section, key_map, updated_at):
             set_config_value(cursor, key, section[field], updated_at)
 
 
-def _set_restart_pending():
-    try:
-        open(RESTART_MARKER, "w").close()
-    except OSError as exc:
-        print(f"Warning: could not write restart marker: {exc}")
-
-
-def _clear_restart_pending():
-    try:
-        os.remove(RESTART_MARKER)
-    except FileNotFoundError:
-        pass
-    except OSError as exc:
-        print(f"Warning: could not remove restart marker: {exc}")
-
-
-def _restart_pending():
-    return os.path.exists(RESTART_MARKER)
-
-
-def restart_server():
-    """Restart the open-webui server daemon so it reloads its config.
-
-    Only the ``server`` daemon is restarted (not the whole snap) so this
-    oneshot service does not try to restart itself.  snapctl refuses to
-    restart while another snap change is in progress; rather than crashing we
-    record a pending-restart marker and let a later invocation retry.
-    """
-    print("Restarting open-webui server...")
-    try:
-        subprocess.run(["snapctl", "restart", "open-webui.server"], check=True)
-    except subprocess.CalledProcessError as exc:
-        print(f"Could not restart open-webui server ({exc}); "
-              "leaving a pending-restart marker to retry on a later run.")
-        _set_restart_pending()
-        return False
-    print("Server restarted.")
-    _clear_restart_pending()
-    return True
-
-
 def check_and_sync():
     # Check if database exists
     if not os.path.exists(DB_PATH):
@@ -385,43 +335,37 @@ def check_and_sync():
         print(f"Shared openai urls: {shared_openai_urls}")
         print(f"Shared ollama urls: {shared_ollama_urls}")
 
-        # Compare; if identical there is nothing to write.  We may still owe a
-        # restart from a previous run whose restart could not complete.
+        # Compare; exit early if identical (order-insensitive)
         if sorted(db_openai_urls) == sorted(shared_openai_urls) and \
                 sorted(db_ollama_urls) == sorted(shared_ollama_urls):
-            if _restart_pending():
-                print("Configs are in sync, but a previous restart did not "
-                      "complete; retrying restart.")
-                needs_restart = True
-            else:
-                print("Configs are in sync, nothing to do.")
-                needs_restart = False
-        else:
-            # Apply changes: remove all snap entries, then re-add from shared
-            # configs.
-            print("Changes detected, updating database...")
+            print("Configs are in sync, nothing to do.")
+            sys.exit(0)
 
-            config["openai"] = remove_snap_entries(config["openai"])
-            config["ollama"] = remove_snap_entries(config["ollama"])
+        # Apply changes: remove all snap entries, then re-add from shared configs
+        print("Changes detected, updating database...")
 
-            for file_cfg in shared_openai_cfgs:
-                config["openai"] = add_openai_entry(config["openai"], file_cfg)
+        config["openai"] = remove_snap_entries(config["openai"])
+        config["ollama"] = remove_snap_entries(config["ollama"])
 
-            for file_cfg in shared_ollama_cfgs:
-                config["ollama"] = add_ollama_entry(config["ollama"], file_cfg)
+        for file_cfg in shared_openai_cfgs:
+            config["openai"] = add_openai_entry(config["openai"], file_cfg)
 
-            now = int(time.time())
-            write_section(cursor, config["openai"], OPENAI_KEYS, now)
-            write_section(cursor, config["ollama"], OLLAMA_KEYS, now)
-            conn.commit()
-            print("Database updated successfully.")
-            needs_restart = True
+        for file_cfg in shared_ollama_cfgs:
+            config["ollama"] = add_ollama_entry(config["ollama"], file_cfg)
+
+        now = int(time.time())
+        write_section(cursor, config["openai"], OPENAI_KEYS, now)
+        write_section(cursor, config["ollama"], OLLAMA_KEYS, now)
+        conn.commit()
+        print("Database updated successfully.")
 
     finally:
         conn.close()
 
-    if needs_restart:
-        restart_server()
+    # Restart the service
+    print("Restarting open-webui service...")
+    subprocess.run(["snapctl", "restart", "open-webui"], check=True)
+    print("Service restarted.")
 
 
 if __name__ == "__main__":
