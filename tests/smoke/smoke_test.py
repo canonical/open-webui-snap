@@ -2,6 +2,7 @@ import subprocess
 import time
 
 import pytest
+import requests
 
 import owui
 
@@ -121,15 +122,24 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
     file_id = r.json().get("id")
     assert file_id, f"No 'id' in upload response: {r.json()}"
 
-    # 2. Poll until indexing is complete
+    # 2. Poll until indexing is complete.
+    # The server is a single worker and can briefly drop connections while it is
+    # busy generating embeddings / writing to the vector DB, so tolerate
+    # transient connection errors and keep polling until the deadline.
     deadline = time.monotonic() + RAG_PROCESS_TIMEOUT
+    last = None
     while time.monotonic() < deadline:
-        s = auth_client.get(f"{auth_client.base_url}/api/v1/files/{file_id}/process/status")
+        try:
+            s = auth_client.get(f"{auth_client.base_url}/api/v1/files/{file_id}/process/status")
+        except requests.exceptions.ConnectionError as exc:
+            last = f"connection error: {exc}"
+            time.sleep(owui.POLL_INTERVAL)
+            continue
+        last = s.json() if s.status_code == 200 else s.text
         if s.status_code == 200 and s.json().get("status") == "completed":
             break
         time.sleep(owui.POLL_INTERVAL)
     else:
-        last = s.json() if s.status_code == 200 else s.text
         pytest.fail(
             f"PDF indexing did not complete within {RAG_PROCESS_TIMEOUT}s. "
             f"Last status response: {last}"
