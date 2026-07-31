@@ -99,6 +99,7 @@ def signup_admin(client, base_url: str):
             "email": ADMIN_EMAIL,
             "password": ADMIN_PASSWORD,
         },
+        timeout=30,
     )
     token = resp.json().get("token") if resp.status_code == 200 else None
     return resp, token
@@ -117,6 +118,7 @@ def login_admin(client, base_url: str):
             "email": ADMIN_EMAIL,
             "password": ADMIN_PASSWORD,
         },
+        timeout=30,
     )
     token = resp.json().get("token") if resp.status_code == 200 else None
     return resp, token
