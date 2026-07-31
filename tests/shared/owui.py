@@ -29,6 +29,12 @@ MODELS_TIMEOUT = 900   # 15 min hard cap per smoke-test plan
 DISCONNECT_TIMEOUT = 300  # 5 min
 POLL_INTERVAL = 5
 
+# Per-request (connect, read) timeouts in seconds, shared by the smoke and
+# upgrade suites.  Without these a stalled server (e.g. a hung model inference)
+# would block a ``requests`` call forever.
+QUICK_TIMEOUT = (10, 30)       # lightweight JSON endpoints
+INFERENCE_TIMEOUT = (10, 300)  # model generation / file upload & processing
+
 ADMIN_NAME = "Smoke Admin"
 ADMIN_EMAIL = "admin@smoke.test"
 ADMIN_PASSWORD = "SmokeTest1234!"

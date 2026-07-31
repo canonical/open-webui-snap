@@ -5,10 +5,9 @@ import pytest
 import requests
 
 import owui
+from owui import INFERENCE_TIMEOUT, QUICK_TIMEOUT
 
 RAG_PROCESS_TIMEOUT = 120  # 2 min hard cap for PDF indexing
-QUICK_TIMEOUT = (10, 30)       # lightweight JSON endpoints
-INFERENCE_TIMEOUT = (10, 300)  # model generation / file upload & processing
 
 
 def test_server_not_crashed(server_ready):

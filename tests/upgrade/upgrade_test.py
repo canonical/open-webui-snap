@@ -28,12 +28,7 @@ import subprocess
 import pytest
 
 import owui
-
-# Per-request (connect, read) timeouts in seconds, matching the smoke suite.
-# Without these a stalled server (e.g. a hung model inference) would block a
-# requests call forever.
-QUICK_TIMEOUT = (10, 30)       # lightweight JSON endpoints
-INFERENCE_TIMEOUT = (10, 300)  # model generation
+from owui import INFERENCE_TIMEOUT, QUICK_TIMEOUT
 
 
 def _set_bearer(client, token):
