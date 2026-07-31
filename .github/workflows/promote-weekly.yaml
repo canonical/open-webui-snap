@@ -1,0 +1,39 @@
+# This workflow promotes the snap through the channels on a weekly schedule.
+#
+# The workflow requires a STORE_LOGIN_PROMOTE secret that can promote snaps to the candidate and stable channels.
+
+name: Weekly promotion
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh/Install snapd
+        run: sudo snap refresh snapd || sudo snap install snapd
+
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+
+      - name: Promote latest/candidate to latest/stable
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
+        run: |
+          snapcraft promote open-webui --yes \
+            --from-channel latest/candidate \
+            --to-channel latest/stable
+
+      - name: Promote latest/beta to latest/candidate
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
+        run: |
+          snapcraft promote open-webui --yes \
+            --from-channel latest/beta \
+            --to-channel latest/candidate

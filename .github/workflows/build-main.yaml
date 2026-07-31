@@ -1,3 +1,8 @@
+# This workflow builds the snap and releases it to the edge channel.
+# If the tests succeed, the snap is promoted to beta.
+# 
+# The workflow requires a STORE_LOGIN secret that can publish to edge and promote to beta.
+
 name: Build main branch
 
 on:
@@ -53,6 +58,9 @@ jobs:
     needs: build-publish-test
     runs-on: ubuntu-latest
     steps:
+      - name: Refresh/Install snapd
+        run: sudo snap refresh snapd || sudo snap install snapd
+
       - name: Install snapcraft
         run: sudo snap install snapcraft --classic
 
