@@ -1,4 +1,4 @@
-# This workflow build the snap and releases it to the edge channel. 
+# This workflow builds the snap and releases it to the edge channel.
 # If the tests succeed, the snap is promoted to beta.
 # 
 # The workflow requires a STORE_LOGIN secret that can publish to edge and promote to beta.

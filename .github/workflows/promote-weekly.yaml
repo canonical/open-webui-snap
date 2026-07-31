@@ -1,6 +1,8 @@
+# This workflow promotes the snap through the channels on a weekly schedule.
+#
+# The workflow requires a STORE_LOGIN_PROMOTE secret that can promote snaps to the candidate and stable channels.
+
 name: Weekly promotion
-# Use a strictly scoped STORE_LOGIN_PROMOTE secret. e.g:
-# snapcraft export-login --snaps=open-webui --acls package_access,package_release --channels latest/candidate,latest/stable --expires "2027-01-31T00:00:00Z" promote-only-key.txt
 
 on:
   schedule:
