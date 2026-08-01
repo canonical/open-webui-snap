@@ -20,6 +20,15 @@ confinement: strict
 
 adopt-info: version
 
+lint:
+  # These torch libraries are loaded at runtime via dlopen rather than being
+  # directly linked, so the library linter incorrectly reports them as unused.
+  ignore:
+    - library:
+        - lib/python3.12/site-packages/torch/lib/libaoti_custom_ops.so
+        - lib/python3.12/site-packages/torch/lib/libtorch_global_deps.so
+        - lib/python3.12/site-packages/torch/lib/libtorchbind_test.so
+
 platforms:
   amd64:
   arm64:
@@ -58,14 +67,21 @@ parts:
       
       craftctl default
       
-      # Remove GPU-specific pytorch and its dependencies
+      # Replace the GPU-specific pytorch and its dependencies with the CPU-only build.
+      # This reduces the snap size substantially.
       pip list --format=freeze | grep -iE '^(nvidia|cuda|triton)' | cut -d= -f1 | xargs -r pip uninstall -y
       pip uninstall -y torch
       rm -rf $CRAFT_PART_INSTALL/lib/python*/site-packages/nvidia
       rm -rf $CRAFT_PART_INSTALL/lib/python*/site-packages/torch
-      
-      # Install CPU-only pytorch
       pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+      # Replace the full opencv-python (pulls in unused Qt/X11/GL GUI libs) with
+      # the headless build. This removes a large set of missing-dependency lint
+      # warnings and reduces the snap size, as the server never needs a GUI.
+      pip uninstall -y opencv-python
+      rm -rf $CRAFT_PART_INSTALL/lib/python*/site-packages/cv2
+      rm -rf $CRAFT_PART_INSTALL/lib/python*/site-packages/opencv_python.libs
+      pip install opencv-python-headless
     
   version:
     after:
