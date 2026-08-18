@@ -22,9 +22,7 @@ jobs:
       - name: Install snapcraft
         run: sudo snap install snapcraft --classic
 
-      # Closed channels are absent from the channel map, so a channel is only
-      # promotable when it lists a revision for every architecture in the track.
-      - name: Enforce published revisions for all architectures
+      - name: Check channels have revisions for all architectures
         id: check
         run: |
           info="$(curl -fsSL -H 'Snap-Device-Series: 16' https://api.snapcraft.io/v2/snaps/info/open-webui)"
@@ -48,7 +46,7 @@ jobs:
             published="$(arches "$channel")"
 
             if [ "$published" = "$all" ]; then
-              state=published
+              state=complete
             else
               state=incomplete
             fi
@@ -61,7 +59,7 @@ jobs:
           get_state beta
 
       - name: Promote latest/candidate to latest/stable
-        if: steps.check.outputs.candidate == 'published'
+        if: steps.check.outputs.candidate == 'complete'
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
         run: |
@@ -70,7 +68,7 @@ jobs:
             --to-channel latest/stable
 
       - name: Promote latest/beta to latest/candidate
-        if: steps.check.outputs.beta == 'published'
+        if: steps.check.outputs.beta == 'complete'
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
         run: |
