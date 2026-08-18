@@ -22,27 +22,39 @@ jobs:
       - name: Install snapcraft
         run: sudo snap install snapcraft --classic
 
+      # Closed channels are absent from the channel map, so a channel is only
+      # promotable when it lists a revision for every architecture in the track.
       - name: Enforce published revisions for all architectures
         id: check
-        env:
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
         run: |
-          status="$(snapcraft status open-webui --track latest)"
-          echo "$status"
+          info="$(curl -fsSL -H 'Snap-Device-Series: 16' https://api.snapcraft.io/v2/snaps/info/open-webui)"
+
+          arches() {
+            jq -r --arg risk "$1" \
+              '[."channel-map"[]
+                | select(.channel.track == "latest" and ($risk == "" or .channel.risk == $risk))
+                | .channel.architecture] | unique | join(" ")' <<< "$info"
+          }
+
+          all="$(arches "")"
+          if [ -z "$all" ]; then
+            echo "No architectures found for track latest." >&2
+            exit 1
+          fi
+          echo "Architectures in latest: $all"
 
           get_state() {
             channel="$1"
-            # Revision is the last field of every row for this channel, one row per architecture.
-            revisions="$(printf '%s\n' "$status" | awk -v c="$channel" '$3 == c {print $5}')"
+            published="$(arches "$channel")"
 
-            if [ -n "$revisions" ] && ! printf '%s\n' "$revisions" | grep -qv '^[0-9]\+$'; then
+            if [ "$published" = "$all" ]; then
               state=published
             else
-              state=empty
+              state=incomplete
             fi
 
             echo "${channel}=$state" >> "$GITHUB_OUTPUT"
-            echo "latest/$channel is $state."
+            echo "latest/$channel is $state (published for: ${published:-none})."
           }
 
           get_state candidate
