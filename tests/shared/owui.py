@@ -186,6 +186,37 @@ def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
 
 
 # ---------------------------------------------------------------------------
+# Bundled plugins (seeded functions)
+# ---------------------------------------------------------------------------
+# The snap seeds bundled Open WebUI plugins (functions) via the seed-plugins
+# oneshot daemon.  This id is derived from plugins/inference-snaps-plugin.py by
+# scripts/seed-plugins.py (non-identifier chars -> '_', lowercased).
+SNAP_PLUGIN_ID = "inference_snaps_plugin"
+
+
+def wait_for_seeded_function(client, base_url: str, function_id: str = SNAP_PLUGIN_ID,
+                             timeout: int = MODELS_TIMEOUT):
+    """Poll ``GET /api/v1/functions/`` until *function_id* appears.
+
+    The seed-plugins daemon runs after the server and polls for the database, so
+    the function may take a short while to show up.  Returns the matching
+    function dict, or None if the deadline was reached.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            r = client.get(f"{base_url}/api/v1/functions/", timeout=10)
+            if r.status_code == 200:
+                for func in r.json():
+                    if func.get("id") == function_id:
+                        return func
+        except requests.RequestException:
+            pass
+        time.sleep(POLL_INTERVAL)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
 def read_pinned_version() -> str:

@@ -31,6 +31,21 @@ def test_admin_signup(admin_token):
     assert admin_token, "Admin signup did not return a usable JWT token"
 
 
+def test_snap_plugin_seeded(auth_client):
+    """The bundled inference-snaps plugin is seeded and active by default."""
+    func = owui.wait_for_seeded_function(auth_client, auth_client.base_url)
+    assert func is not None, (
+        f"Bundled plugin '{owui.SNAP_PLUGIN_ID}' did not appear in "
+        f"/api/v1/functions/ within {owui.MODELS_TIMEOUT}s"
+    )
+    assert func.get("type") == "pipe", (
+        f"Expected seeded plugin to be a 'pipe', got: {func.get('type')!r}"
+    )
+    assert func.get("is_active") is True, (
+        f"Seeded plugin '{owui.SNAP_PLUGIN_ID}' should be active by default: {func}"
+    )
+
+
 def test_version_matches_requirements(auth_client, pinned_version):
     """GET /api/config reports the version pinned in dependencies/requirements.txt."""
     r = auth_client.get(f"{auth_client.base_url}/api/config", timeout=QUICK_TIMEOUT)
