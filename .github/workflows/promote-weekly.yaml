@@ -32,18 +32,14 @@ jobs:
 
           get_state() {
             channel="$1"
-            state=""
-            while IFS= read -r marker; do
-              case "$marker" in
-                *[0-9]*) row=published ;;
-                '↑')     row=tracking ;; # channel tracks a more stable channel
-                *)       row=empty ;;    # channel does not have any revisions published
-              esac
-              if [ -z "$state" ] || [ "$state" = published ]; then
-                state="$row"
-              fi
-            done < <(printf '%s\n' "$status" | awk -v c="$channel" '{for(i=1;i<=NF;i++) if($i==c){print $(i+1); break}}')
-            [ -z "$state" ] && state=empty
+            # Revision is the last field of every row for this channel, one row per architecture.
+            revisions="$(printf '%s\n' "$status" | awk -v c="$channel" '{for(i=1;i<=NF;i++) if($i==c){print $NF; break}}')"
+
+            if [ -n "$revisions" ] && ! printf '%s\n' "$revisions" | grep -qv '^[0-9]\+$'; then
+              state=published
+            else
+              state=empty
+            fi
 
             echo "${channel}=$state" >> "$GITHUB_OUTPUT"
             echo "latest/$channel is $state."
