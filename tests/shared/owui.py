@@ -144,9 +144,10 @@ def _list_model_ids(client, base_url: str):
 def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT):
     """Poll ``GET /api/models`` until a gemma model appears; return its id or None.
 
-    The background service that registers the gemma4 endpoint triggers a server
-    restart, so RequestException (connection refused during the restart window)
-    is swallowed and retried.
+    The inference-snaps plugin discovers gemma4 by scanning local ports, so the
+    model appears once gemma4's server is up and serving; no interface
+    connection or server restart is involved.  RequestException is swallowed and
+    retried.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -168,7 +169,7 @@ def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
 
     Returns True once the model is gone, or the last-seen list of ids if the
     deadline was reached (so callers can produce a useful diagnostic).
-    RequestException during the disconnect-triggered restart is swallowed.
+    RequestException while the model server is stopping is swallowed.
     """
     deadline = time.monotonic() + timeout
     last_ids = None

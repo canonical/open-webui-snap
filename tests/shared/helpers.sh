@@ -54,11 +54,11 @@ cleanup_enabled() {
 }
 
 # ---------------------------------------------------------------------------
-# Wait for the open-webui server to stabilise after connecting the interface.
+# Wait for the open-webui server to stabilise after startup.
 #
-# Connecting open-webui:config triggers the import-shared-configs hook, which
-# may rewrite the DB and restart snap.open-webui.server. If tests start during
-# that window, an in-flight request dies with "Connection reset by peer".
+# The server can briefly restart while it finishes initialising (e.g. first-run
+# database setup). If tests start during that window, an in-flight request dies
+# with "Connection reset by peer".
 #
 # We consider the server stable once its systemd MainPID has stayed unchanged
 # while /health returns 200 for STABLE_WINDOW consecutive seconds.

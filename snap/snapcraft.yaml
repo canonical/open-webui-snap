@@ -24,12 +24,6 @@ platforms:
   amd64:
   arm64:
 
-plugs:
-  config:
-    interface: content
-    content: open-webui-config
-    target: $SNAP/shared-configs
-
 parts:
   local:
     plugin: dump

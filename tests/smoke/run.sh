@@ -1,8 +1,8 @@
 #!/bin/bash
 # Run the smoke test suite directly on the host machine.
 #
-# Installs the target build and runs tests/smoke/, which ends by disconnecting
-# the gemma4 interface and asserting the model disappears.
+# Installs the target build and runs tests/smoke/, which ends by stopping the
+# gemma4 snap and asserting the auto-discovered model disappears.
 #
 # The upgrade scenario lives in a separate runner: tests/upgrade/run.sh.
 #
@@ -39,7 +39,6 @@ cleanup
 
 install_owui_target
 install_gemma4
-connect_interface
 
 wait_for_server_stable
 

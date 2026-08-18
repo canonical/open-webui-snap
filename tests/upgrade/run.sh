@@ -2,8 +2,8 @@
 # Run the upgrade test suite directly on the host machine.
 #
 # Purges any existing open-webui, installs the baseline build from a store
-# channel, connects the gemma4 interface, then refreshes (upgrades) to the
-# target build and runs tests/upgrade/ to confirm the model survives.
+# channel, installs gemma4, then refreshes (upgrades) to the target build and
+# runs tests/upgrade/ to confirm the model survives.
 #
 # The plain smoke scenario lives in a separate runner: tests/smoke/run.sh.
 #

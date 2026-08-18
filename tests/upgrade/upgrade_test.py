@@ -6,10 +6,20 @@ this module runs, the harness has already:
   * removed and purged open-webui,
   * installed open-webui from the baseline channel (OWUI_FROM_CHANNEL,
     default stable),
-  * (re)connected open-webui:config <-> gemma4:open-webui.
+  * installed gemma4,
+  * best-effort connected the open-webui:config <-> gemma4:open-webui content
+    interface (a no-op on plugin-based baselines).
 
-gemma4 itself stays installed throughout.  These tests run **in file order**
-inside a single pytest session:
+This suite is the **migration test** across the two ways open-webui registers a
+local inference snap:
+
+  * Older baselines register gemma4 via the content interface + a DB import.
+  * The target build (and future baselines) auto-discovers gemma4 via the
+    bundled inference-snaps plugin, with no interface or manual config.
+
+Whichever mechanism the baseline uses, gemma4 must remain usable across the
+refresh.  gemma4 itself stays installed and running throughout.  These tests run
+**in file order** inside a single pytest session:
 
   1. baseline server healthy
   2. first-signup admin (fresh, purged DB)
@@ -18,8 +28,13 @@ inside a single pytest session:
   5. upgrade (refresh) to the provided snap file / channel
   6. fresh login on the upgraded build (old JWT is intentionally not reused)
   7. reported version matches dependencies/requirements.txt
-  8. gemma model still present after the upgrade
+  8. gemma model still present after the upgrade (now via the plugin)
   9. text prompt still works after the upgrade
+
+Note: when upgrading from an interface-based baseline, the old DB import may
+leave an orphaned "snap"-tagged connection behind.  The target build does not
+clean this up (see the upgrade caveat in README.md), so a duplicate gemma model
+entry is tolerated here rather than asserted against.
 """
 
 import os
@@ -102,8 +117,8 @@ def test_perform_upgrade(client):
       * OWUI_UPGRADE_SNAP=<file>     -> sudo snap install --dangerous <file>
       * OWUI_UPGRADE_CHANNEL=<chan>  -> sudo snap refresh open-webui --channel <chan>
 
-    Snap preserves data and interface connections across the refresh, so no
-    reconnect is needed.
+    Snap preserves data across the refresh, and gemma4 keeps running, so the
+    model stays auto-discoverable without any reconnect.
     """
     snap_file = os.environ.get("OWUI_UPGRADE_SNAP")
     channel = os.environ.get("OWUI_UPGRADE_CHANNEL")
