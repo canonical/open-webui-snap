@@ -23,10 +23,11 @@ import requests
 HEALTH_TIMEOUT = 1200  # 20 min
 # How long to wait for the gemma4 model to appear in /api/models (seconds).
 MODELS_TIMEOUT = 900   # 15 min hard cap per smoke-test plan
-# How long to wait for the gemma4 model to *disappear* after disconnecting the
-# interface.  The gemma service can take >1 min to notice the disconnect, after
-# which it triggers an Open WebUI restart, so allow a generous window.
-DISCONNECT_TIMEOUT = 300  # 5 min
+# How long to wait for the gemma4 model to *disappear* after stopping the gemma4
+# snap.  The plugin re-scans ports on each /api/models call and the model cache
+# TTL is ~1s, so removal is quick once the port stops listening; allow a modest
+# margin for the snap to fully stop.
+MODEL_REMOVAL_TIMEOUT = 120  # 2 min
 POLL_INTERVAL = 5
 
 # Per-request (connect, read) timeouts in seconds, shared by the smoke and
@@ -164,7 +165,7 @@ def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT):
 
 
 def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
-                          timeout: int = DISCONNECT_TIMEOUT):
+                          timeout: int = MODEL_REMOVAL_TIMEOUT):
     """Poll ``GET /api/models`` until no model id contains ``substr``.
 
     Returns True once the model is gone, or the last-seen list of ids if the

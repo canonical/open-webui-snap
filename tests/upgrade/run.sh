@@ -48,7 +48,9 @@ install_gemma4
 echo "=== Installing open-webui from channel $FROM_CHANNEL (baseline) ==="
 sudo snap install open-webui --channel="$FROM_CHANNEL"
 
-connect_interface
+# The baseline may be an older, interface-based build; connect the interface so
+# it can register gemma4.  On plugin-based builds this is a no-op.
+connect_interface_if_available
 
 wait_for_server_stable
 

@@ -189,22 +189,24 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
 
 
 # ---------------------------------------------------------------------------
-# Interface disconnect — must run LAST, after every model-dependent test.
+# Model removal — must run LAST, after every model-dependent test.
 # ---------------------------------------------------------------------------
-def test_model_disappears_after_disconnect(auth_client, gemma_model_id):
-    """Disconnecting gemma4 removes the model from /api/models.
+def test_model_disappears_after_stopping_snap(auth_client, gemma_model_id):
+    """Stopping the gemma4 snap removes its auto-discovered model from /api/models.
 
-    The gemma service can take >1 min to notice the disconnect, after which it
-    triggers an Open WebUI restart, so we poll with a generous cap and tolerate
-    connection errors during the restart window.
+    With the inference-snaps plugin, models are discovered by scanning local
+    ports on each /api/models call.  Once gemma4's server stops listening, the
+    plugin no longer finds it, so the model disappears without any interface
+    disconnect.  Connection errors during the brief stop window are tolerated.
     """
-    subprocess.run(
-        ["sudo", "snap", "disconnect", "open-webui:config", "gemma4:open-webui"],
-        check=True,
-    )
-    result = owui.wait_for_model_absent(auth_client, auth_client.base_url)
-    assert result is True, (
-        f"gemma model did not disappear from /api/models within "
-        f"{owui.DISCONNECT_TIMEOUT}s after disconnecting the interface. "
-        f"Models still visible: {result}"
-    )
+    subprocess.run(["sudo", "snap", "stop", "gemma4"], check=True)
+    try:
+        result = owui.wait_for_model_absent(auth_client, auth_client.base_url)
+        assert result is True, (
+            f"gemma model did not disappear from /api/models within "
+            f"{owui.MODEL_REMOVAL_TIMEOUT}s after stopping the gemma4 snap. "
+            f"Models still visible: {result}"
+        )
+    finally:
+        # Restore gemma4 so local re-runs (without OWUI_CLEANUP) start clean.
+        subprocess.run(["sudo", "snap", "start", "gemma4"], check=False)
