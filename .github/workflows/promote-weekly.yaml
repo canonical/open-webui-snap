@@ -33,7 +33,7 @@ jobs:
           get_state() {
             channel="$1"
             # Revision is the last field of every row for this channel, one row per architecture.
-            revisions="$(printf '%s\n' "$status" | awk -v c="$channel" '{for(i=1;i<=NF;i++) if($i==c){print $NF; break}}')"
+            revisions="$(printf '%s\n' "$status" | awk -v c="$channel" '$3 == c {print $5}')"
 
             if [ -n "$revisions" ] && ! printf '%s\n' "$revisions" | grep -qv '^[0-9]\+$'; then
               state=published
