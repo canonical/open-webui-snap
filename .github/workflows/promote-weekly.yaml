@@ -22,7 +22,44 @@ jobs:
       - name: Install snapcraft
         run: sudo snap install snapcraft --classic
 
+      - name: Check channels have revisions for all architectures
+        id: check
+        run: |
+          info="$(curl -fsSL -H 'Snap-Device-Series: 16' https://api.snapcraft.io/v2/snaps/info/open-webui)"
+
+          arches() {
+            jq -r --arg risk "$1" \
+              '[."channel-map"[]
+                | select(.channel.track == "latest" and ($risk == "" or .channel.risk == $risk))
+                | .channel.architecture] | unique | join(" ")' <<< "$info"
+          }
+
+          all="$(arches "")"
+          if [ -z "$all" ]; then
+            echo "No architectures found for track latest." >&2
+            exit 1
+          fi
+          echo "Architectures in latest: $all"
+
+          get_state() {
+            channel="$1"
+            published="$(arches "$channel")"
+
+            if [ "$published" = "$all" ]; then
+              state=complete
+            else
+              state=incomplete
+            fi
+
+            echo "${channel}=$state" >> "$GITHUB_OUTPUT"
+            echo "latest/$channel is $state (published for: ${published:-none})."
+          }
+
+          get_state candidate
+          get_state beta
+
       - name: Promote latest/candidate to latest/stable
+        if: steps.check.outputs.candidate == 'complete'
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
         run: |
@@ -31,6 +68,7 @@ jobs:
             --to-channel latest/stable
 
       - name: Promote latest/beta to latest/candidate
+        if: steps.check.outputs.beta == 'complete'
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
         run: |
