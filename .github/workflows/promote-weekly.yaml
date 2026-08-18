@@ -22,7 +22,7 @@ jobs:
       - name: Install snapcraft
         run: sudo snap install snapcraft --classic
 
-      - name: Check which channels have published revisions
+      - name: Enforce published revisions for all architectures
         id: check
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
@@ -32,14 +32,18 @@ jobs:
 
           get_state() {
             channel="$1"
-            state=empty
+            state=""
             while IFS= read -r marker; do
               case "$marker" in
-                *[0-9]*) state=published ;;
-                '↑')     state=tracking ;; # channel tracks a more stable channel
-                '-')     state=empty ;;    # channel does not have any revisions published
+                *[0-9]*) row=published ;;
+                '↑')     row=tracking ;; # channel tracks a more stable channel
+                *)       row=empty ;;    # channel does not have any revisions published
               esac
+              if [ -z "$state" ] || [ "$state" = published ]; then
+                state="$row"
+              fi
             done < <(printf '%s\n' "$status" | awk -v c="$channel" '{for(i=1;i<=NF;i++) if($i==c){print $(i+1); break}}')
+            [ -z "$state" ] && state=empty
 
             echo "${channel}=$state" >> "$GITHUB_OUTPUT"
             echo "latest/$channel is $state."
