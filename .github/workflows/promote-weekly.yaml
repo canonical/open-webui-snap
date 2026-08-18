@@ -22,7 +22,34 @@ jobs:
       - name: Install snapcraft
         run: sudo snap install snapcraft --classic
 
+      - name: Check which channels have published revisions
+        id: check
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
+        run: |
+          status="$(snapcraft status open-webui --track latest)"
+          echo "$status"
+
+          get_state() {
+            channel="$1"
+            state=empty
+            while IFS= read -r marker; do
+              case "$marker" in
+                *[0-9]*) state=published ;;
+                '↑')     state=tracking ;; # channel tracks a more stable channel
+                '-')     state=empty ;;    # channel does not have any revisions published
+              esac
+            done < <(printf '%s\n' "$status" | awk -v c="$channel" '{for(i=1;i<=NF;i++) if($i==c){print $(i+1); break}}')
+
+            echo "${channel}=$state" >> "$GITHUB_OUTPUT"
+            echo "latest/$channel is $state."
+          }
+
+          get_state candidate
+          get_state beta
+
       - name: Promote latest/candidate to latest/stable
+        if: steps.check.outputs.candidate == 'published'
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
         run: |
@@ -31,6 +58,7 @@ jobs:
             --to-channel latest/stable
 
       - name: Promote latest/beta to latest/candidate
+        if: steps.check.outputs.beta == 'published'
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN_PROMOTE }}
         run: |
