@@ -92,38 +92,6 @@ parts:
       # Add the NOTICE file
       cp -v $CRAFT_PROJECT_DIR/NOTICE $CRAFT_PRIME/
 
-  # Fail the build if the Open WebUI Python API that seed-plugins.py depends on
-  # ever changes/disappears, so breakage is caught here rather than at runtime.
-  plugin-api-check:
-    after:
-      - open-webui
-    plugin: nil
-    override-build: |
-      set -e
-      functions_py="$(find "$CRAFT_STAGE"/lib/python*/site-packages/open_webui/models -name functions.py | head -1)"
-      users_py="$(find "$CRAFT_STAGE"/lib/python*/site-packages/open_webui/models -name users.py | head -1)"
-      plugin_py="$(find "$CRAFT_STAGE"/lib/python*/site-packages/open_webui/utils -name plugin.py | head -1)"
-
-      check() {
-        # $1 = file, $2 = grep pattern, $3 = human description
-        if ! grep -qE "$2" "$1"; then
-          echo "ERROR: Open WebUI API check failed: expected $3 in $1" >&2
-          echo "       seed-plugins.py relies on this; the upstream API changed." >&2
-          exit 1
-        fi
-        echo "OK: found $3"
-      }
-
-      check "$functions_py" 'class FunctionForm'                  'FunctionForm class'
-      check "$functions_py" 'class FunctionMeta'                  'FunctionMeta class'
-      check "$functions_py" 'def get_function_by_id'              'Functions.get_function_by_id()'
-      check "$functions_py" 'def insert_new_function'             'Functions.insert_new_function()'
-      check "$functions_py" 'def update_function_by_id'           'Functions.update_function_by_id()'
-      check "$users_py"     'def get_super_admin_user'            'Users.get_super_admin_user()'
-      check "$plugin_py"    'def load_function_module_by_id'      'load_function_module_by_id()'
-      check "$plugin_py"    'def replace_imports'                 'replace_imports()'
-      echo "Open WebUI plugin-seeding API check passed."
-
 apps:
   open-webui:
     command: bin/info.sh

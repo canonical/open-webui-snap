@@ -1,23 +1,10 @@
 #!/usr/bin/env python3
 """Seed bundled Open WebUI plugins (functions) on install/refresh.
 
-Open WebUI has no directory- or env-based plugin loader: plugins live only in
-the ``function`` table of ``webui.db``.  Rather than manipulating that internal
-schema with raw SQL, this script uses Open WebUI's own Python model API
-(``open_webui.models.functions.Functions`` et al.), which is a stable
-abstraction that upstream keeps in step with any schema changes.  A companion
-build-time check (see the ``plugin-api-check`` part in snapcraft.yaml) fails the
-snap build if that API ever disappears, so breakage is caught at build time
-rather than silently at runtime.
-
-Behaviour:
-* Waits (read-only) until the server has created and migrated the ``function``
-  table, then exits early if it never appears within the deadline.
-* For every ``$SNAP/plugins/*.py`` it computes a content hash and skips work when
-  a marker records that exact hash was already seeded.  This makes the script
-  idempotent, propagates plugin updates on refresh, and – crucially – does not
-  fight the user: if they delete or edit a seeded plugin it stays that way until
-  a *new* bundled version ships.
+Plugins live only in the ``function`` table of ``webui.db``, so this script
+seeds them via Open WebUI's Python model API. It is idempotent: each plugin is
+hash-tracked and re-seeded only when the bundled version changes, so user edits
+are left untouched.
 """
 
 import hashlib

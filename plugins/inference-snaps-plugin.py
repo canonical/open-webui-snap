@@ -1,7 +1,7 @@
 """
 title: Snap Model Auto-Discovery
 description: Scans a range of local ports to dynamically discover and route to LLM snaps with corrected streaming.
-version: 1.4.0
+version: 0.1.0
 """
 import json
 
