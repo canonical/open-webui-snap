@@ -28,11 +28,17 @@ import time
 
 SNAP = os.environ.get("SNAP", "")
 SNAP_COMMON = os.environ.get("SNAP_COMMON", "")
+SNAP_DATA = os.environ.get("SNAP_DATA", "")
 
 PLUGINS_DIR = os.path.join(SNAP, "plugins")
 DATA_DIR = os.path.join(SNAP_COMMON, "data")
 DB_PATH = os.path.join(DATA_DIR, "webui.db")
 MARKER_DIR = os.path.join(DATA_DIR, ".owui-seeded")
+# The server (`open-webui serve`) generates/loads its signing secret from a
+# ``.webui_secret_key`` file in its working directory ($SNAP_DATA) and exports it
+# as WEBUI_SECRET_KEY.  Importing open_webui hard-requires that variable, so we
+# load the same file here to stay in step with the running server.
+SECRET_KEY_FILE = os.path.join(SNAP_DATA, ".webui_secret_key")
 
 # How long to wait for the server to create and migrate the database on first
 # launch before giving up (this script re-runs on the next snap start/refresh).
@@ -131,6 +137,25 @@ def discover_plugins() -> list[tuple[str, str, str]]:
 # Seeding
 # ---------------------------------------------------------------------------
 
+def ensure_secret_key() -> bool:
+    """Load WEBUI_SECRET_KEY from the server's key file if not already set.
+
+    Importing open_webui aborts when WEBUI_SECRET_KEY is unset and auth is
+    enabled.  The server writes/loads this key from ``$SNAP_DATA/.webui_secret_key``
+    at startup, so by the time the ``function`` table exists the file is present.
+    """
+    if os.environ.get("WEBUI_SECRET_KEY"):
+        return True
+    try:
+        key = open(SECRET_KEY_FILE, "r").read()
+    except OSError:
+        return False
+    if not key:
+        return False
+    os.environ["WEBUI_SECRET_KEY"] = key
+    return True
+
+
 def seed() -> None:
     plugins = discover_plugins()
     if not plugins:
@@ -151,13 +176,29 @@ def seed() -> None:
         print("All bundled plugins already seeded.")
         return
 
+    # Bind to the same signing secret as the running server before importing
+    # open_webui, which hard-requires WEBUI_SECRET_KEY.
+    if not ensure_secret_key():
+        print(
+            f"  WEBUI_SECRET_KEY not set and {SECRET_KEY_FILE} not readable yet; "
+            "exiting, will retry on next start."
+        )
+        return
+
+    import asyncio
+
+    asyncio.run(_seed_async(pending))
+
+
+async def _seed_async(pending) -> None:
     # Import Open WebUI's stable model API.  DATA_DIR is inherited from the
-    # daemon environment so this binds to the same webui.db as the server.
+    # daemon environment so this binds to the same webui.db as the server.  The
+    # API is async in current Open WebUI, so this runs inside an event loop.
     from open_webui.models.functions import Functions, FunctionForm, FunctionMeta
     from open_webui.models.users import Users
     from open_webui.utils.plugin import load_function_module_by_id, replace_imports
 
-    super_admin = Users.get_super_admin_user()
+    super_admin = await Users.get_super_admin_user()
     owner_id = super_admin.id if super_admin else ""
 
     for function_id, path, content, content_hash in pending:
@@ -166,7 +207,7 @@ def seed() -> None:
 
         # Validate the plugin and determine its type via Open WebUI's own loader.
         try:
-            _module, function_type, frontmatter = load_function_module_by_id(
+            _module, function_type, frontmatter = await load_function_module_by_id(
                 function_id, content=content
             )
         except Exception as exc:  # noqa: BLE001 - report and skip a bad plugin
@@ -179,7 +220,7 @@ def seed() -> None:
             manifest=frontmatter,
         )
 
-        if not _upsert(
+        if not await _upsert(
             Functions, FunctionForm, function_id, function_type, name, content, meta, owner_id
         ):
             print(f"  ERROR: failed to seed plugin '{function_id}', will retry next run.")
@@ -189,26 +230,28 @@ def seed() -> None:
         print(f"  Plugin '{function_id}' seeded ({function_type}).")
 
 
-def _upsert(Functions, FunctionForm, function_id, function_type, name, content, meta, owner_id):
+async def _upsert(Functions, FunctionForm, function_id, function_type, name, content, meta, owner_id):
     """Insert a new function or update the content of an existing one.
 
     Retries around the commit to tolerate transient SQLite locking while the
     server is writing.
     """
+    import asyncio
+
     for attempt in range(1, COMMIT_RETRIES + 1):
-        existing = Functions.get_function_by_id(function_id)
+        existing = await Functions.get_function_by_id(function_id)
         if existing is None:
             form = FunctionForm(id=function_id, name=name, content=content, meta=meta)
-            result = Functions.insert_new_function(owner_id, function_type, form)
+            result = await Functions.insert_new_function(owner_id, function_type, form)
             if result is not None:
                 # Newly bundled plugins are active by default so their models
                 # show up immediately.
-                Functions.update_function_by_id(function_id, {"is_active": True})
+                await Functions.update_function_by_id(function_id, {"is_active": True})
                 return True
         else:
             # Update the content/metadata on refresh but preserve the user's
             # active/global toggles.
-            result = Functions.update_function_by_id(
+            result = await Functions.update_function_by_id(
                 function_id,
                 {"name": name, "content": content, "meta": meta.model_dump()},
             )
@@ -217,7 +260,7 @@ def _upsert(Functions, FunctionForm, function_id, function_type, name, content, 
 
         if attempt < COMMIT_RETRIES:
             print(f"  Upsert attempt {attempt} failed; retrying in {COMMIT_RETRY_DELAY}s...")
-            time.sleep(COMMIT_RETRY_DELAY)
+            await asyncio.sleep(COMMIT_RETRY_DELAY)
     return False
 
 
@@ -229,7 +272,13 @@ def main() -> None:
             "(Open WebUI may still be initialising); exiting, will retry on next start."
         )
         sys.exit(0)
-    seed()
+    try:
+        seed()
+    except Exception as exc:  # noqa: BLE001
+        # A seeding failure must never abort the snap install/refresh (this is a
+        # oneshot service gating startup); log loudly and let it retry next start.
+        print(f"Plugin seeding failed (will retry on next start): {exc}")
+        sys.exit(0)
     print("Plugin seeding complete.")
 
 
