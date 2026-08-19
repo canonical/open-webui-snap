@@ -31,8 +31,8 @@ def parse_ports(port_string: str) -> list[int]:
 
 class Pipe:
     class Valves(BaseModel):
-        PORT_RANGES: str = Field(default="8330-8340", description="Comma-separated list of ports.")
-        DUMMY_API_KEY: str = Field(default="sk-local-snap", description="Dummy API key.")
+        PORT_RANGES: str = Field(default="8324-8400", description="Comma-separated list of ports.")
+        DUMMY_API_KEY: str = Field(default="-", description="Dummy API key.")
 
     def __init__(self):
         self.type = "manifold"
