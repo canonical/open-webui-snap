@@ -134,9 +134,18 @@ def login_admin(client, base_url: str):
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
-def _list_model_ids(client, base_url: str):
-    """Return the list of model ids from /api/models, or raise RequestException."""
-    r = client.get(f"{base_url}/api/models", timeout=10)
+def _list_model_ids(client, base_url: str, refresh: bool = False):
+    """Return the list of model ids from /api/models, or raise RequestException.
+
+    Open WebUI 0.11.0 caches the base model list (``models.base_models_cache``,
+    enabled by default) in ``app.state.BASE_MODELS``.  A plain ``GET /api/models``
+    returns that cache and only re-invokes the inference-snaps plugin's port scan
+    when called with ``?refresh=true``.  Callers that depend on *live* discovery
+    (a snap appearing or disappearing) must pass ``refresh=True`` to bypass the
+    cache, otherwise a stopped snap's model lingers until the cache is refreshed.
+    """
+    params = {"refresh": "true"} if refresh else None
+    r = client.get(f"{base_url}/api/models", params=params, timeout=10)
     if r.status_code == 200:
         return [m.get("id", "") for m in r.json().get("data", [])]
     return None
@@ -147,13 +156,14 @@ def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT):
 
     The inference-snaps plugin discovers gemma4 by scanning local ports, so the
     model appears once gemma4's server is up and serving; no interface
-    connection or server restart is involved.  RequestException is swallowed and
-    retried.
+    connection or server restart is involved.  We pass ``refresh=True`` to bypass
+    the 0.11.0 base-models cache so a freshly started snap is discovered promptly.
+    RequestException is swallowed and retried.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            ids = _list_model_ids(client, base_url)
+            ids = _list_model_ids(client, base_url, refresh=True)
             if ids is not None:
                 for mid in ids:
                     if "gemma" in mid.lower():
@@ -170,13 +180,15 @@ def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
 
     Returns True once the model is gone, or the last-seen list of ids if the
     deadline was reached (so callers can produce a useful diagnostic).
+    ``refresh=True`` bypasses the 0.11.0 base-models cache so a stopped snap's
+    model is dropped promptly instead of lingering in the cached list.
     RequestException while the model server is stopping is swallowed.
     """
     deadline = time.monotonic() + timeout
     last_ids = None
     while time.monotonic() < deadline:
         try:
-            ids = _list_model_ids(client, base_url)
+            ids = _list_model_ids(client, base_url, refresh=True)
             if ids is not None:
                 last_ids = ids
                 if not any(substr in mid.lower() for mid in ids):
