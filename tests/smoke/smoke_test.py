@@ -5,6 +5,7 @@ import pytest
 import requests
 
 import owui
+from owui import INFERENCE_TIMEOUT, QUICK_TIMEOUT
 
 RAG_PROCESS_TIMEOUT = 120  # 2 min hard cap for PDF indexing
 
@@ -19,7 +20,7 @@ def test_server_not_crashed(server_ready):
 
 def test_ui_reachable(server_ready, client):
     """GET /health returns 200."""
-    r = client.get(f"{client.base_url}/health")
+    r = client.get(f"{client.base_url}/health", timeout=QUICK_TIMEOUT)
     assert r.status_code == 200, (
         f"GET /health returned {r.status_code}: {r.text}"
     )
@@ -32,7 +33,7 @@ def test_admin_signup(admin_token):
 
 def test_version_matches_requirements(auth_client, pinned_version):
     """GET /api/config reports the version pinned in dependencies/requirements.txt."""
-    r = auth_client.get(f"{auth_client.base_url}/api/config")
+    r = auth_client.get(f"{auth_client.base_url}/api/config", timeout=QUICK_TIMEOUT)
     assert r.status_code == 200, f"GET /api/config returned {r.status_code}: {r.text}"
     data = r.json()
     reported = data.get("version", "")
@@ -61,6 +62,7 @@ def test_text_prompt(auth_client, gemma_model_id):
             "chat_id": "local:smoke-text",
             "messages": [{"role": "user", "content": "Reply with the single word PONG."}],
         },
+        timeout=INFERENCE_TIMEOUT,
     )
     assert r.status_code == 200, f"chat/completions returned {r.status_code}: {r.text}"
     content = r.json()["choices"][0]["message"]["content"]
@@ -87,6 +89,7 @@ def test_image_prompt(auth_client, gemma_model_id, image_b64):
                 }
             ],
         },
+        timeout=INFERENCE_TIMEOUT,
     )
     assert r.status_code == 200, f"chat/completions (image) returned {r.status_code}: {r.text}"
     content = r.json()["choices"][0]["message"]["content"]
@@ -102,6 +105,7 @@ def test_audio_transcription(auth_client, audio_path):
         r = auth_client.post(
             f"{auth_client.base_url}/api/v1/audio/transcriptions",
             files={"file": ("audio.mp3", fh, "audio/mpeg")},
+            timeout=INFERENCE_TIMEOUT,
         )
     assert r.status_code == 200, f"audio/transcriptions returned {r.status_code}: {r.text}"
     transcript = r.json().get("text", "")
@@ -117,6 +121,7 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
         r = auth_client.post(
             f"{auth_client.base_url}/api/v1/files/",
             files={"file": ("CC-BY-SA-4.0.pdf", fh, "application/pdf")},
+            timeout=INFERENCE_TIMEOUT,
         )
     assert r.status_code == 200, f"File upload returned {r.status_code}: {r.text}"
     file_id = r.json().get("id")
@@ -130,7 +135,10 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
     last = None
     while time.monotonic() < deadline:
         try:
-            s = auth_client.get(f"{auth_client.base_url}/api/v1/files/{file_id}/process/status")
+            s = auth_client.get(
+                f"{auth_client.base_url}/api/v1/files/{file_id}/process/status",
+                timeout=QUICK_TIMEOUT,
+            )
         except requests.exceptions.ConnectionError as exc:
             last = f"connection error: {exc}"
             time.sleep(owui.POLL_INTERVAL)
@@ -156,6 +164,7 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
             ],
             "files": [{"type": "file", "id": file_id}],
         },
+        timeout=INFERENCE_TIMEOUT,
     )
     assert r.status_code == 200, f"chat/completions (RAG) returned {r.status_code}: {r.text}"
     content = r.json()["choices"][0]["message"]["content"]

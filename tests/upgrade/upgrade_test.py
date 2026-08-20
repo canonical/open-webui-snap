@@ -28,6 +28,7 @@ import subprocess
 import pytest
 
 import owui
+from owui import INFERENCE_TIMEOUT, QUICK_TIMEOUT
 
 
 def _set_bearer(client, token):
@@ -45,6 +46,7 @@ def _text_prompt(client, model_id, chat_id):
                 {"role": "user", "content": "Reply with the single word PONG."}
             ],
         },
+        timeout=INFERENCE_TIMEOUT,
     )
     assert r.status_code == 200, (
         f"chat/completions returned {r.status_code}: {r.text}"
@@ -154,7 +156,7 @@ def test_version_after_upgrade(client, state):
     pinned = owui.read_pinned_version()
     assert pinned, "Could not read pinned open-webui version from requirements.txt"
 
-    r = client.get(f"{client.base_url}/api/config")
+    r = client.get(f"{client.base_url}/api/config", timeout=QUICK_TIMEOUT)
     assert r.status_code == 200, f"GET /api/config returned {r.status_code}: {r.text}"
     reported = r.json().get("version", "")
     assert reported == pinned, (
