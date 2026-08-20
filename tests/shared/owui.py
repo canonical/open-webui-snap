@@ -34,7 +34,7 @@ POLL_INTERVAL = 5
 # upgrade suites.  Without these a stalled server (e.g. a hung model inference)
 # would block a ``requests`` call forever.
 QUICK_TIMEOUT = (10, 30)       # lightweight JSON endpoints
-INFERENCE_TIMEOUT = (10, 300)  # model generation / file upload & processing
+INFERENCE_TIMEOUT = (10, 600)  # model generation / file upload & processing
 
 ADMIN_NAME = "Smoke Admin"
 ADMIN_EMAIL = "admin@smoke.test"

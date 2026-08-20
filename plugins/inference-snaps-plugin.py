@@ -33,6 +33,17 @@ class Pipe:
     class Valves(BaseModel):
         PORT_RANGES: str = Field(default="8324-8400", description="Comma-separated list of ports.")
         DUMMY_API_KEY: str = Field(default="-", description="Dummy API key.")
+        REQUEST_TIMEOUT: float = Field(
+            default=600.0,
+            description="Read/write timeout (seconds) for chat completions. Large "
+            "contexts (e.g. RAG) can take a long time to prefill and generate on "
+            "CPU-only backends, so keep this generous.",
+        )
+        CONNECT_TIMEOUT: float = Field(
+            default=10.0,
+            description="Connection timeout (seconds). Kept short so a stopped snap "
+            "(closed port) fails fast instead of blocking.",
+        )
 
     def __init__(self):
         self.type = "manifold"
@@ -78,26 +89,34 @@ class Pipe:
 
         headers = {"Authorization": f"Bearer {self.valves.DUMMY_API_KEY}"}
 
+        # Short connect (a stopped snap's closed port fails fast) but a generous
+        # read/write budget: RAG and other large-context prompts can take a long
+        # time to prefill and generate on CPU-only backends.
+        timeout = httpx.Timeout(
+            self.valves.REQUEST_TIMEOUT,
+            connect=self.valves.CONNECT_TIMEOUT,
+        )
+
         if payload.get("stream", False):
             # Do NOT use 'async with' here. Return the generator directly.
-            return self._stream_response(endpoint_url, headers, payload)
+            return self._stream_response(endpoint_url, headers, payload, timeout)
         else:
             # Sync requests can still use the context manager safely
             async with httpx.AsyncClient(headers=headers) as client:
-                return await self._sync_response(client, endpoint_url, payload)
+                return await self._sync_response(client, endpoint_url, payload, timeout)
 
-    async def _sync_response(self, client, endpoint_url, payload):
-        response = await client.post(f"{endpoint_url}/chat/completions", json=payload, timeout=120.0)
+    async def _sync_response(self, client, endpoint_url, payload, timeout):
+        response = await client.post(f"{endpoint_url}/chat/completions", json=payload, timeout=timeout)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
 
-    async def _stream_response(self, endpoint_url, headers, payload):
+    async def _stream_response(self, endpoint_url, headers, payload, timeout):
         # Instantiate the client manually inside the generator function
         client = httpx.AsyncClient(headers=headers)
 
         try:
             async with client.stream("POST", f"{endpoint_url}/chat/completions", json=payload,
-                                     timeout=120.0) as response:
+                                     timeout=timeout) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
