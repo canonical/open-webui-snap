@@ -192,18 +192,26 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
 # Model removal — must run LAST, after every model-dependent test.
 # ---------------------------------------------------------------------------
 def test_model_disappears_after_stopping_snap(auth_client, gemma_model_id):
-    """Stopping the gemma4 snap removes its auto-discovered model from /api/models.
+    """Stopping the gemma4 snap makes its auto-discovered model stop serving.
 
     With the inference-snaps plugin, models are discovered by scanning local
-    ports on each /api/models call.  Once gemma4's server stops listening, the
-    plugin no longer finds it, so the model disappears without any interface
-    disconnect.  Connection errors during the brief stop window are tolerated.
+    ports on each ``/api/models`` refresh.  Once gemma4's server stops listening
+    the plugin no longer finds it.
+
+    When other inference snaps remain, the model simply disappears from
+    ``/api/models``.  When gemma4 is the *only* backend (as in CI), the plugin
+    returns an empty list and Open WebUI 0.11.0 keeps serving its cached model
+    list, so the id lingers; in that case we assert the model can no longer serve
+    a request.  ``wait_for_model_absent`` accepts both outcomes.  Connection
+    errors during the brief stop window are tolerated.
     """
     subprocess.run(["sudo", "snap", "stop", "gemma4"], check=True)
     try:
-        result = owui.wait_for_model_absent(auth_client, auth_client.base_url)
+        result = owui.wait_for_model_absent(
+            auth_client, auth_client.base_url, model_id=gemma_model_id
+        )
         assert result is True, (
-            f"gemma model did not disappear from /api/models within "
+            f"gemma model was still served from /api/models within "
             f"{owui.MODEL_REMOVAL_TIMEOUT}s after stopping the gemma4 snap. "
             f"Models still visible: {result}"
         )

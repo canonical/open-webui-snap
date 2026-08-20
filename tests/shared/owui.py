@@ -174,14 +174,74 @@ def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT):
     return None
 
 
-def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
-                          timeout: int = MODEL_REMOVAL_TIMEOUT):
-    """Poll ``GET /api/models`` until no model id contains ``substr``.
+def _model_unusable(client, base_url: str, model_id: str) -> bool:
+    """Return True only if a chat completion to *model_id* fails to serve a reply.
 
-    Returns True once the model is gone, or the last-seen list of ids if the
-    deadline was reached (so callers can produce a useful diagnostic).
-    ``refresh=True`` bypasses the 0.11.0 base-models cache so a stopped snap's
-    model is dropped promptly instead of lingering in the cached list.
+    Used to detect that a stopped snap's model can no longer be served even when
+    it still lingers in ``/api/models``.  With the inference-snaps plugin, a
+    stopped snap leaves the port closed, so the plugin's ``pipe()`` raises a
+    connection error and Open WebUI returns HTTP 200 with an ``{"error": ...}``
+    body (no ``choices``) instead of a completion.
+
+    Only failures that indicate the backend is gone count as "unusable":
+
+    * a connection error (port closed), or
+    * a non-200 response, or
+    * a 200 body carrying an ``error`` / lacking ``choices``.
+
+    A read timeout is deliberately NOT treated as unusable: a slow-but-alive
+    model on a loaded CI runner can legitimately take a while to respond, and we
+    must not misreport it as removed.  ``(connect, read)`` timeouts keep the
+    connect phase short (a closed port fails fast) while allowing a slow reply.
+    """
+    try:
+        r = client.post(
+            f"{base_url}/api/chat/completions",
+            json={
+                "model": model_id,
+                "chat_id": "local:model-removal-probe",
+                "messages": [{"role": "user", "content": "ping"}],
+                "stream": False,
+            },
+            timeout=(5, 60),
+        )
+    except requests.exceptions.Timeout:
+        # Alive but slow to answer — inconclusive, keep polling.
+        return False
+    except requests.exceptions.ConnectionError:
+        # Port closed / server gone.
+        return True
+    except requests.RequestException:
+        return False
+    if r.status_code != 200:
+        return True
+    try:
+        data = r.json()
+    except ValueError:
+        return True
+    # A served completion has a non-empty "choices" list; an error reply does not.
+    return "error" in data or not data.get("choices")
+
+
+def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
+                          model_id: str | None = None,
+                          timeout: int = MODEL_REMOVAL_TIMEOUT):
+    """Poll until the stopped snap's model is gone from ``/api/models`` *or* unusable.
+
+    Returns True once the model has been removed, or the last-seen list of ids if
+    the deadline was reached (so callers can produce a useful diagnostic).
+
+    Two things can happen after a snap stops, depending on what else is running:
+
+    * If other inference snaps remain, the plugin still returns a non-empty model
+      list and Open WebUI refreshes its cache, so the stopped model disappears
+      from ``/api/models`` (``refresh=True`` bypasses the 0.11.0 base-models
+      cache).
+    * If the stopped snap was the *only* backend (as in CI), the plugin returns
+      an empty list and Open WebUI's ``get_all_models`` falls back to its cached
+      ``BASE_MODELS``, so the model lingers indefinitely.  In that case we detect
+      removal by confirming the model can no longer serve a request.
+
     RequestException while the model server is stopping is swallowed.
     """
     deadline = time.monotonic() + timeout
@@ -192,6 +252,13 @@ def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
             if ids is not None:
                 last_ids = ids
                 if not any(substr in mid.lower() for mid in ids):
+                    return True
+                # Model still listed (stale cache): treat as removed once it can
+                # no longer serve a completion.
+                stale = model_id or next(
+                    (mid for mid in ids if substr in mid.lower()), None
+                )
+                if stale is not None and _model_unusable(client, base_url, stale):
                     return True
         except requests.RequestException:
             pass
