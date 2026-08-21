@@ -30,12 +30,8 @@ disappear again on the next refresh.
 ### Configuration
 
 The plugin's behaviour can be tuned from Open WebUI under
-**Admin Settings → Functions → Snap Model Auto-Discovery** (valves):
-
-* `PORT_RANGES` – comma-separated list of ports/ranges to scan
-  (default `8330-8340`).
-* `DUMMY_API_KEY` – placeholder API key sent to the local endpoints
-  (default `sk-local-snap`).
+**Admin Settings → Functions → Snap Model Auto-Discovery** (valves). Each valve
+is described inline in the UI.
 
 The plugin source lives in
 [`plugins/inference-snaps-plugin.py`](plugins/inference-snaps-plugin.py) and is

@@ -89,9 +89,6 @@ class Pipe:
 
         headers = {"Authorization": f"Bearer {self.valves.DUMMY_API_KEY}"}
 
-        # Short connect (a stopped snap's closed port fails fast) but a generous
-        # read/write budget: RAG and other large-context prompts can take a long
-        # time to prefill and generate on CPU-only backends.
         timeout = httpx.Timeout(
             self.valves.REQUEST_TIMEOUT,
             connect=self.valves.CONNECT_TIMEOUT,

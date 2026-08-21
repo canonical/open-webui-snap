@@ -155,10 +155,8 @@ def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT):
     """Poll ``GET /api/models`` until a gemma model appears; return its id or None.
 
     The inference-snaps plugin discovers gemma4 by scanning local ports, so the
-    model appears once gemma4's server is up and serving; no interface
-    connection or server restart is involved.  We pass ``refresh=True`` to bypass
-    the 0.11.0 base-models cache so a freshly started snap is discovered promptly.
-    RequestException is swallowed and retried.
+    model appears once gemma4's server is up and serving. RequestException is
+    swallowed and retried.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -178,21 +176,14 @@ def _model_unusable(client, base_url: str, model_id: str) -> bool:
     """Return True only if a chat completion to *model_id* fails to serve a reply.
 
     Used to detect that a stopped snap's model can no longer be served even when
-    it still lingers in ``/api/models``.  With the inference-snaps plugin, a
-    stopped snap leaves the port closed, so the plugin's ``pipe()`` raises a
-    connection error and Open WebUI returns HTTP 200 with an ``{"error": ...}``
-    body (no ``choices``) instead of a completion.
-
-    Only failures that indicate the backend is gone count as "unusable":
-
-    * a connection error (port closed), or
-    * a non-200 response, or
-    * a 200 body carrying an ``error`` / lacking ``choices``.
+    it still lingers in ``/api/models``: the plugin's ``pipe()`` hits a closed
+    port and Open WebUI returns HTTP 200 with an ``{"error": ...}`` body (no
+    ``choices``) instead of a completion.
 
     A read timeout is deliberately NOT treated as unusable: a slow-but-alive
-    model on a loaded CI runner can legitimately take a while to respond, and we
-    must not misreport it as removed.  ``(connect, read)`` timeouts keep the
-    connect phase short (a closed port fails fast) while allowing a slow reply.
+    model on a loaded CI runner can legitimately take a while to respond. The
+    ``(connect, read)`` timeout keeps the connect phase short (a closed port
+    fails fast) while allowing a slow reply.
     """
     try:
         r = client.post(
@@ -234,9 +225,7 @@ def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
     Two things can happen after a snap stops, depending on what else is running:
 
     * If other inference snaps remain, the plugin still returns a non-empty model
-      list and Open WebUI refreshes its cache, so the stopped model disappears
-      from ``/api/models`` (``refresh=True`` bypasses the 0.11.0 base-models
-      cache).
+      list and the stopped model disappears from ``/api/models``.
     * If the stopped snap was the *only* backend (as in CI), the plugin returns
       an empty list and Open WebUI's ``get_all_models`` falls back to its cached
       ``BASE_MODELS``, so the model lingers indefinitely.  In that case we detect
