@@ -112,11 +112,12 @@ def wait_for_database() -> bool:
     """Block until the server is healthy and the ``function`` table exists."""
     port = server_port()
     deadline = time.monotonic() + SERVER_READY_TIMEOUT
-    while time.monotonic() < deadline:
+    while True:
         if server_healthy(port) and function_table_exists():
             return True
+        if time.monotonic() + POLL_INTERVAL >= deadline:
+            return False
         time.sleep(POLL_INTERVAL)
-    return server_healthy(port) and function_table_exists()
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +145,7 @@ def discover_plugins() -> list[tuple[str, str, str]]:
         path = os.path.join(PLUGINS_DIR, entry)
         if not os.path.isfile(path):
             continue
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             content = fh.read()
         plugins.append((function_id_from_filename(entry), path, content))
     return plugins
@@ -164,8 +165,9 @@ def ensure_secret_key() -> bool:
     if os.environ.get("WEBUI_SECRET_KEY"):
         return True
     try:
-        key = open(SECRET_KEY_FILE, "r").read()
-    except OSError:
+        with open(SECRET_KEY_FILE, "r", encoding="utf-8") as fh:
+            key = fh.read()
+    except (OSError, ValueError):
         return False
     if not key:
         return False
@@ -269,11 +271,16 @@ async def _upsert(Functions, FunctionForm, function_id, function_type, name, con
                 # a user-disabled function on the next attempt.
                 await Functions.delete_function_by_id(function_id)
         else:
-            # Overwrite the content/metadata with the bundled version but
+            # Overwrite the type/content/metadata with the bundled version but
             # preserve the user's active/global toggles.
             result = await Functions.update_function_by_id(
                 function_id,
-                {"name": name, "content": content, "meta": meta.model_dump()},
+                {
+                    "type": function_type,
+                    "name": name,
+                    "content": content,
+                    "meta": meta.model_dump(),
+                },
             )
             if result is not None:
                 return True
