@@ -31,14 +31,16 @@ def parse_ports(port_string: str) -> list[int]:
 
 class Pipe:
     class Valves(BaseModel):
-        PORT_RANGES: str = Field(default="8324-8400", description="Comma-separated list of ports.")
+        PORT_RANGES: str = Field(default="8324-8400", description="Comma-separated list of ports or port ranges.")
         DUMMY_API_KEY: str = Field(default="-", description="Dummy API key.")
+        # Maximum allowed delay before a chat completion request towards an inference snap times out
         REQUEST_TIMEOUT: float = Field(
             default=600.0,
             description="Read/write timeout (seconds) for chat completions. Large "
             "contexts (e.g. RAG) can take a long time to prefill and generate on "
             "CPU-only backends, so keep this generous.",
         )
+        # Maximum allowed delay before a snap is deemed unreachable when selected by the user for inference
         CONNECT_TIMEOUT: float = Field(
             default=10.0,
             description="Connection timeout (seconds). Kept short so a stopped snap "
@@ -67,7 +69,7 @@ class Pipe:
                                     "id": f"{endpoint}|{model['id']}",
                                     "name": f"Snap: {model['id']} (Port {port})"
                                 })
-                            break
+                            break # api_version loop
                     except Exception:
                         continue
         return models
