@@ -200,8 +200,8 @@ def _model_unusable(client, base_url: str, model_id: str) -> bool:
         # Alive but slow to answer — inconclusive, keep polling.
         return False
     except requests.exceptions.ConnectionError:
-        # Port closed / server gone.
-        return True
+        # Open WebUI itself is unavailable — inconclusive, keep polling.
+        return False
     except requests.RequestException:
         return False
     if r.status_code != 200:

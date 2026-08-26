@@ -141,8 +141,13 @@ class Pipe:
                 if res.status_code != 200:
                     continue
                 try:
-                    data = res.json().get("data", [])
+                    payload = res.json()
                 except ValueError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                data = payload.get("data", [])
+                if not isinstance(data, list):
                     continue
                 return [
                     {
