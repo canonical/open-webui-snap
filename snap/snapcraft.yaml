@@ -117,6 +117,12 @@ apps:
     command: bin/seed-plugins.py
     daemon: oneshot
     install-mode: enable
+    # Seeding can legitimately fail transiently (server still migrating the
+    # database, SQLite lock, secret key not written yet).  Exit codes are
+    # non-zero for those cases, so restart on failure until it succeeds instead
+    # of leaving the bundled plugin absent until the next refresh.
+    restart-condition: on-failure
+    restart-delay: 30s
     after:
       - server
     environment:

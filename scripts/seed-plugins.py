@@ -143,10 +143,15 @@ def ensure_secret_key() -> bool:
     return True
 
 
-def seed() -> None:
+def seed() -> bool:
+    """Seed all bundled plugins.
+
+    Returns True when nothing retryable failed. A False return means the caller
+    should exit non-zero so the (oneshot) service is restarted and tries again.
+    """
     plugins = discover_plugins()
     if not plugins:
-        return
+        return True
 
     # Skip anything already seeded at its current content hash *before* importing
     # the (heavy) Open WebUI machinery, so the common "nothing changed" path is
@@ -161,23 +166,23 @@ def seed() -> None:
 
     if not pending:
         print("All bundled plugins already seeded.")
-        return
+        return True
 
     # Bind to the same signing secret as the running server before importing
     # open_webui, which hard-requires WEBUI_SECRET_KEY.
     if not ensure_secret_key():
         print(
             f"  WEBUI_SECRET_KEY not set and {SECRET_KEY_FILE} not readable yet; "
-            "exiting, will retry on next start."
+            "will retry."
         )
-        return
+        return False
 
     import asyncio
 
-    asyncio.run(_seed_async(pending))
+    return asyncio.run(_seed_async(pending))
 
 
-async def _seed_async(pending) -> None:
+async def _seed_async(pending) -> bool:
     # Import Open WebUI's stable model API.  DATA_DIR is inherited from the
     # daemon environment so this binds to the same webui.db as the server.  The
     # API is async in current Open WebUI, so this runs inside an event loop.
@@ -188,6 +193,7 @@ async def _seed_async(pending) -> None:
     super_admin = await Users.get_super_admin_user()
     owner_id = super_admin.id if super_admin else ""
 
+    ok = True
     for function_id, path, content, content_hash in pending:
         print(f"Seeding plugin '{function_id}' from {path}")
         content = replace_imports(content)
@@ -198,6 +204,8 @@ async def _seed_async(pending) -> None:
                 function_id, content=content
             )
         except Exception as exc:  # noqa: BLE001 - report and skip a bad plugin
+            # A plugin that cannot be loaded is broken, not transient: retrying
+            # would never help, so do not mark the run as retryable.
             print(f"  ERROR: could not load plugin '{function_id}': {exc}")
             continue
 
@@ -210,18 +218,23 @@ async def _seed_async(pending) -> None:
         if not await _upsert(
             Functions, FunctionForm, function_id, function_type, name, content, meta, owner_id
         ):
-            print(f"  ERROR: failed to seed plugin '{function_id}', will retry next run.")
+            print(f"  ERROR: failed to seed plugin '{function_id}', will retry.")
+            ok = False
             continue
 
         write_marker(function_id, content_hash)
         print(f"  Plugin '{function_id}' seeded ({function_type}).")
+
+    return ok
 
 
 async def _upsert(Functions, FunctionForm, function_id, function_type, name, content, meta, owner_id):
     """Insert a new function or update the content of an existing one.
 
     Retries around the commit to tolerate transient SQLite locking while the
-    server is writing.
+    server is writing.  A newly inserted function is only considered seeded once
+    it has also been activated, so the caller never writes the hash marker for a
+    half-applied upsert.
     """
     import asyncio
 
@@ -229,11 +242,21 @@ async def _upsert(Functions, FunctionForm, function_id, function_type, name, con
         existing = await Functions.get_function_by_id(function_id)
         if existing is None:
             form = FunctionForm(id=function_id, name=name, content=content, meta=meta)
-            result = await Functions.insert_new_function(owner_id, function_type, form)
-            if result is not None:
+            existing = await Functions.insert_new_function(owner_id, function_type, form)
+
+            if existing is not None:
                 # Newly bundled plugins are active by default so their models
                 # show up immediately.
-                await Functions.update_function_by_id(function_id, {"is_active": True})
+                if await Functions.update_function_by_id(function_id, {"is_active": True}) is not None:
+                    return True
+        elif existing.is_active is False and read_marker(function_id) is None:
+            # A previous run inserted the row but failed before activating it;
+            # finish that insert rather than leaving the plugin dormant forever.
+            updated = await Functions.update_function_by_id(
+                function_id,
+                {"name": name, "content": content, "meta": meta.model_dump(), "is_active": True},
+            )
+            if updated is not None:
                 return True
         else:
             # Update the content/metadata on refresh but preserve the user's
@@ -256,16 +279,22 @@ def main() -> None:
     if not wait_for_function_table():
         print(
             "Database/function table not ready within timeout "
-            "(Open WebUI may still be initialising); exiting, will retry on next start."
+            "(Open WebUI may still be initialising); exiting non-zero so the "
+            "service is restarted and seeding is retried."
         )
-        sys.exit(0)
+        sys.exit(1)
     try:
-        seed()
+        ok = seed()
     except Exception as exc:  # noqa: BLE001
-        # A seeding failure must never abort the snap install/refresh (this is a
-        # oneshot service gating startup); log loudly and let it retry next start.
-        print(f"Plugin seeding failed (will retry on next start): {exc}")
-        sys.exit(0)
+        # Never abort the snap install/refresh with a traceback, but do exit
+        # non-zero: the service is restarted on failure so a transient import,
+        # lock or initialisation error is retried instead of silently dropping
+        # the bundled plugin until the next refresh.
+        print(f"Plugin seeding failed (will retry): {exc}")
+        sys.exit(1)
+    if not ok:
+        print("Plugin seeding incomplete (will retry).")
+        sys.exit(1)
     print("Plugin seeding complete.")
 
 

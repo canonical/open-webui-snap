@@ -266,11 +266,13 @@ SNAP_PLUGIN_ID = "inference_snaps_plugin"
 
 def wait_for_seeded_function(client, base_url: str, function_id: str = SNAP_PLUGIN_ID,
                              timeout: int = MODELS_TIMEOUT):
-    """Poll ``GET /api/v1/functions/`` until *function_id* appears.
+    """Poll ``GET /api/v1/functions/`` until *function_id* appears and is active.
 
     The seed-plugins daemon runs after the server and polls for the database, so
-    the function may take a short while to show up.  Returns the matching
-    function dict, or None if the deadline was reached.
+    the function may take a short while to show up.  Seeding inserts the row and
+    activates it in two separate operations, so a row that is present but not yet
+    active means seeding is still in progress; keep polling in that case.
+    Returns the matching function dict, or None if the deadline was reached.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -278,7 +280,7 @@ def wait_for_seeded_function(client, base_url: str, function_id: str = SNAP_PLUG
             r = client.get(f"{base_url}/api/v1/functions/", timeout=10)
             if r.status_code == 200:
                 for func in r.json():
-                    if func.get("id") == function_id:
+                    if func.get("id") == function_id and func.get("is_active"):
                         return func
         except requests.RequestException:
             pass
