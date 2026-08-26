@@ -1,20 +1,21 @@
 """
-title: Snap Model Auto-Discovery
-description: Scans a range of local ports to dynamically discover and route to LLM snaps with corrected streaming.
+title: Inference Snap Auto-Discovery
+description: Scans a range of local ports to dynamically discover and route to inference snaps.
 version: 0.1.0
 """
 import asyncio
 import json
 import time
-from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, Field
 
-# API versions probed on each candidate port, in preference order.
-API_VERSIONS = ("/v3", "/v1")
-# Inference snaps only ever listen on the loopback interface.
-ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+API_VERSIONS = ("v3", "v1")
+BASE_HOST = "127.0.0.1"
+
+
+def endpoint_url(port: int, api_version: str) -> str:
+    return f"http://{BASE_HOST}:{port}/{api_version}"
 
 
 def parse_ports(port_string: str) -> list[int]:
@@ -39,24 +40,30 @@ def parse_ports(port_string: str) -> list[int]:
 
 class Pipe:
     class Valves(BaseModel):
-        PORT_RANGES: str = Field(default="8324-8400", description="Comma-separated list of ports or port ranges.")
-        DUMMY_API_KEY: str = Field(default="-", description="Dummy API key.")
-        # Maximum allowed delay before a chat completion request towards an inference snap times out
+        PORT_RANGES: str = Field(
+            default="8324-8400",
+            description="Local ports scanned for inference snaps, as a "
+                        "comma-separated list of ports or port ranges.",
+        )
+        API_KEY: str = Field(
+            default="-",
+            description="API key sent to the discovered endpoints. Only needed if a "
+                        "backend requires authentication.",
+        )
         REQUEST_TIMEOUT: float = Field(
             default=600.0,
-            description="Read/write timeout (seconds) for chat completions. Large "
-            "contexts (e.g. RAG) can take a long time to prefill and generate on "
-            "CPU-only backends, so keep this generous.",
+            description="Time (seconds) before a chat completion times out. Keep it "
+                        "generous: large contexts (e.g. RAG) are slow on CPU-only backends.",
         )
-        # Maximum allowed delay before a snap is deemed unreachable when selected by the user for inference
         CONNECT_TIMEOUT: float = Field(
             default=10.0,
-            description="Connection timeout (seconds). Kept short so a stopped snap "
-            "(closed port) fails fast instead of blocking.",
+            description="Time (seconds) before a selected snap is deemed unreachable. "
+                        "Keep it short so a stopped snap (closed port) fails fast.",
         )
         DISCOVERY_TIMEOUT: float = Field(
             default=0.5,
-            description="Per-probe timeout (seconds) when scanning ports for models.",
+            description="Time (seconds) before a port is deemed to have no snap "
+                        "listening during discovery.",
         )
         DISCOVERY_CONCURRENCY: int = Field(
             default=32,
@@ -64,8 +71,8 @@ class Pipe:
         )
         DISCOVERY_CACHE_TTL: float = Field(
             default=30.0,
-            description="How long (seconds) discovery results are reused before the "
-            "port range is scanned again. Set to 0 to disable caching.",
+            description="Time (seconds) discovery results are reused before the ports "
+                        "are scanned again. Set to 0 to disable caching.",
         )
 
     def __init__(self):
@@ -98,7 +105,7 @@ class Pipe:
         if not ports:
             return []
 
-        headers = {"Authorization": f"Bearer {self.valves.DUMMY_API_KEY}"}
+        headers = {"Authorization": f"Bearer {self.valves.API_KEY}"}
         concurrency = max(1, int(self.valves.DISCOVERY_CONCURRENCY))
         semaphore = asyncio.Semaphore(concurrency)
         limits = httpx.Limits(max_connections=concurrency)
@@ -123,7 +130,7 @@ class Pipe:
         timeout = self.valves.DISCOVERY_TIMEOUT
         async with semaphore:
             for api_version in API_VERSIONS:
-                endpoint = f"http://127.0.0.1:{port}{api_version}"
+                endpoint = endpoint_url(port, api_version)
                 try:
                     res = await asyncio.wait_for(
                         client.get(f"{endpoint}/models", timeout=timeout),
@@ -139,7 +146,7 @@ class Pipe:
                     continue
                 return [
                     {
-                        "id": f"{endpoint}|{model['id']}",
+                        "id": f"{port}|{api_version}|{model['id']}",
                         "name": f"Snap: {model['id']} (Port {port})",
                     }
                     for model in data
@@ -150,58 +157,49 @@ class Pipe:
     # ------------------------------------------------------------------
     # Routing
     # ------------------------------------------------------------------
-    def _normalise_endpoint(self, endpoint_url: str):
-        """Return a safe, rebuilt endpoint URL, or None if it is not allowed.
+    def _resolve_endpoint_and_model_id(self, model_id_full: str):
+        """Decode a model id into ``(endpoint URL, snap model id)``.
 
-        The model id is caller-controlled, so the encoded endpoint must be
-        re-validated here: only loopback HTTP endpoints on a configured port and
-        a known API version path may ever be contacted.
+        The model ID field is repurposed to carry the port and API version of the snap, so that the
+        routing logic can determine which local endpoint to send the request to. The format is:
+        ``<port>|<api_version>|<model_id>``
+
+        This function extracts the port and API version, validates them, and constructs the endpoint URL.
+        If the model ID is malformed or points to an unknown endpoint, it raises a ValueError.
         """
-        try:
-            parsed = urlparse(endpoint_url)
-        except ValueError:
-            return None
-
-        if parsed.scheme != "http":
-            return None
-        if parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.params:
-            return None
-        try:
-            host = parsed.hostname
-            port = parsed.port
-        except ValueError:
-            return None
-        if host is None or host.lower() not in ALLOWED_HOSTS:
-            return None
-        if port is None or port not in set(parse_ports(self.valves.PORT_RANGES)):
-            return None
-        if parsed.path not in API_VERSIONS:
-            return None
-
-        return f"http://127.0.0.1:{port}{parsed.path}"
-
-    async def pipe(self, body: dict):
-        model_id_full = body.get("model", "")
-
-        encoded_part = model_id_full.split(".", 1)[-1] if "." in model_id_full else model_id_full
+        port_field, _, remainder = model_id_full.partition("|")
+        api_version, separator, model_id = remainder.partition("|")
+        if not separator or not model_id:
+            raise ValueError(f"Could not determine routing URL from model id: {model_id_full}")
 
         try:
-            endpoint_url, original_model_id = encoded_part.split("|", 1)
+            port = int(port_field.rsplit(".", 1)[-1])
         except ValueError:
             raise ValueError(f"Could not determine routing URL from model id: {model_id_full}")
 
-        endpoint_url = self._normalise_endpoint(endpoint_url)
-        if endpoint_url is None or not original_model_id:
+        if api_version not in API_VERSIONS:
             raise ValueError(
-                f"Refusing to route model id to a non-local inference endpoint: {model_id_full}"
+                f"Refusing to route model id with an unknown API version "
+                f"{api_version!r}: {model_id_full}"
             )
+
+        if port not in set(parse_ports(self.valves.PORT_RANGES)):
+            raise ValueError(
+                f"Refusing to route model id to port {port}, which is outside the "
+                f"configured PORT_RANGES: {model_id_full}"
+            )
+
+        return endpoint_url(port, api_version), model_id
+
+    async def pipe(self, body: dict):
+        endpoint, original_model_id = self._resolve_endpoint_and_model_id(body.get("model", ""))
 
         payload = {**body, "model": original_model_id}
         payload.pop("user", None)
         payload.pop("chat_id", None)
         payload.pop("title", None)
 
-        headers = {"Authorization": f"Bearer {self.valves.DUMMY_API_KEY}"}
+        headers = {"Authorization": f"Bearer {self.valves.API_KEY}"}
 
         timeout = httpx.Timeout(
             self.valves.REQUEST_TIMEOUT,
@@ -210,23 +208,31 @@ class Pipe:
 
         if payload.get("stream", False):
             # Do NOT use 'async with' here. Return the generator directly.
-            return self._stream_response(endpoint_url, headers, payload, timeout)
+            return self._stream_response(endpoint, headers, payload, timeout)
         else:
             # Sync requests can still use the context manager safely
             async with httpx.AsyncClient(headers=headers) as client:
-                return await self._sync_response(client, endpoint_url, payload, timeout)
+                return await self._sync_response(client, endpoint, payload, timeout)
 
-    async def _sync_response(self, client, endpoint_url, payload, timeout):
-        response = await client.post(f"{endpoint_url}/chat/completions", json=payload, timeout=timeout)
+    async def _sync_response(self, client, endpoint, payload, timeout):
+        response = await client.post(f"{endpoint}/chat/completions", json=payload, timeout=timeout)
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        # A backend that answers 200 with a body that is not an OpenAI chat
+        # completion must fail this request only, with a message that names the
+        # offending endpoint, rather than surfacing a bare KeyError/IndexError.
+        try:
+            return response.json()["choices"][0]["message"]["content"]
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise ValueError(
+                f"Unexpected chat completion response from {endpoint}: {exc}"
+            ) from exc
 
-    async def _stream_response(self, endpoint_url, headers, payload, timeout):
+    async def _stream_response(self, endpoint, headers, payload, timeout):
         # Instantiate the client manually inside the generator function
         client = httpx.AsyncClient(headers=headers)
 
         try:
-            async with client.stream("POST", f"{endpoint_url}/chat/completions", json=payload,
+            async with client.stream("POST", f"{endpoint}/chat/completions", json=payload,
                                      timeout=timeout) as response:
                 # Upstream/transport failures must surface as errors rather than
                 # being yielded as ordinary assistant content, otherwise a failed
@@ -242,7 +248,10 @@ class Pipe:
                             delta = data["choices"][0]["delta"].get("content", "")
                             if delta:
                                 yield delta
-                        except (json.JSONDecodeError, KeyError) as e:
+                        except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError) as e:
+                            # A malformed chunk is skipped rather than aborting an
+                            # otherwise usable stream; transport/HTTP failures are
+                            # still raised above.
                             print(f"DEBUG: Stream parse error: {e} on data: {data_str}")
         finally:
             # Explicitly close the client when the generator is finished or errors out
