@@ -28,8 +28,9 @@ refresh.  gemma4 itself stays installed and running throughout.  These tests run
   5. upgrade (refresh) to the provided snap file / channel
   6. fresh login on the upgraded build (old JWT is intentionally not reused)
   7. reported version matches dependencies/requirements.txt
-  8. gemma model still present after the upgrade (now via the plugin)
-  9. text prompt still works after the upgrade
+  8. the bundled plugin is seeded and active on the migrated DB
+  9. a plugin-provided gemma model is present after the upgrade
+ 10. text prompt still works after the upgrade
 
 Note: when upgrading from an interface-based baseline, the old DB import may
 leave an orphaned "snap"-tagged connection behind.  The target build does not
@@ -180,12 +181,40 @@ def test_version_after_upgrade(client, state):
     )
 
 
+def test_plugin_seeded_after_upgrade(client, state):
+    """The bundled plugin is seeded and active on the *migrated* database.
+
+    Seeding runs against a database that already exists (and, on interface-based
+    baselines, already carries a legacy "snap" connection), so this asserts that
+    the migration path really does end up with an active plugin rather than
+    relying on whatever the baseline left behind.
+    """
+    assert state.get("token"), "Login must succeed before checking the plugin"
+    func = owui.wait_for_seeded_function(client, client.base_url)
+    assert func is not None, (
+        f"Bundled plugin '{owui.SNAP_PLUGIN_ID}' is not present and active in "
+        f"/api/v1/functions/ within {owui.MODELS_TIMEOUT}s after the upgrade.\n\n"
+        f"Journal tail:\n{owui.get_journal()}"
+    )
+    assert func.get("type") == "pipe", (
+        f"Expected seeded plugin to be a 'pipe', got: {func.get('type')!r}"
+    )
+
+
 def test_model_available_after_upgrade(client, state):
-    """The gemma model is still registered after the upgrade."""
-    model_id = owui.wait_for_gemma_model(client, client.base_url)
+    """A gemma model served *by the plugin* is registered after the upgrade.
+
+    A legacy "snap"-tagged connection left behind by an interface-based baseline
+    can keep serving its own gemma entry, so requiring the plugin's model id
+    prefix is what proves the plugin took over.
+    """
+    model_id = owui.wait_for_gemma_model(
+        client, client.base_url, prefix=owui.SNAP_PLUGIN_MODEL_PREFIX
+    )
     assert model_id, (
-        f"gemma model missing from /api/models after the upgrade "
-        f"(waited {owui.MODELS_TIMEOUT}s)."
+        f"No gemma model with the plugin prefix "
+        f"'{owui.SNAP_PLUGIN_MODEL_PREFIX}' appeared in /api/models after the "
+        f"upgrade (waited {owui.MODELS_TIMEOUT}s)."
     )
     state["model_id"] = model_id
 

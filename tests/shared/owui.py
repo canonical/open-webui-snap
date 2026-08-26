@@ -151,12 +151,18 @@ def _list_model_ids(client, base_url: str, refresh: bool = False):
     return None
 
 
-def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT):
+def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT,
+                         prefix: str | None = None):
     """Poll ``GET /api/models`` until a gemma model appears; return its id or None.
 
     The inference-snaps plugin discovers gemma4 by scanning local ports, so the
     model appears once gemma4's server is up and serving. RequestException is
     swallowed and retried.
+
+    When *prefix* is given, only model ids starting with it are accepted.  Pass
+    ``SNAP_PLUGIN_MODEL_PREFIX`` to require that the model is served by the
+    bundled plugin rather than by some other (e.g. legacy, interface-imported)
+    connection.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -164,8 +170,11 @@ def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT):
             ids = _list_model_ids(client, base_url, refresh=True)
             if ids is not None:
                 for mid in ids:
-                    if "gemma" in mid.lower():
-                        return mid
+                    if "gemma" not in mid.lower():
+                        continue
+                    if prefix is not None and not mid.startswith(prefix):
+                        continue
+                    return mid
         except requests.RequestException:
             pass
         time.sleep(POLL_INTERVAL)
@@ -262,6 +271,10 @@ def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
 # oneshot daemon.  This id is derived from plugins/inference-snaps-plugin.py by
 # scripts/seed-plugins.py (non-identifier chars -> '_', lowercased).
 SNAP_PLUGIN_ID = "inference_snaps_plugin"
+# Open WebUI namespaces the models a pipe function returns as
+# "<function id>.<pipe id>", so every model served by the bundled plugin carries
+# this prefix (e.g. "inference_snaps_plugin.8324|v1|gemma3:4b").
+SNAP_PLUGIN_MODEL_PREFIX = f"{SNAP_PLUGIN_ID}."
 
 
 def wait_for_seeded_function(client, base_url: str, function_id: str = SNAP_PLUGIN_ID,

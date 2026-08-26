@@ -117,14 +117,19 @@ apps:
     command: bin/seed-plugins.py
     daemon: oneshot
     install-mode: enable
-    # Seeding can legitimately fail transiently (server still migrating the
-    # database, SQLite lock, secret key not written yet).  Exit codes are
-    # non-zero for those cases, so restart on failure until it succeeds instead
-    # of leaving the bundled plugin absent until the next refresh.
+    # Seeding can legitimately fail transiently (server still starting or
+    # migrating the database, SQLite lock, secret key not written yet).  Exit
+    # codes are non-zero for those cases, so restart on failure until it
+    # succeeds instead of leaving the bundled plugin absent until the next
+    # refresh.
     restart-condition: on-failure
     restart-delay: 30s
     after:
       - server
+    plugs:
+      # Loopback access to the server's /health endpoint, which is how seeding
+      # waits for startup migrations to finish before touching the database.
+      - network
     environment:
       DATA_DIR: $SNAP_COMMON/data
       STATIC_DIR: $SNAP_DATA/static

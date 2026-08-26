@@ -189,6 +189,60 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
 
 
 # ---------------------------------------------------------------------------
+# Re-seeding — deliberately destructive, so it runs after the feature tests.
+# ---------------------------------------------------------------------------
+def test_plugin_reseeded_after_deletion(auth_client):
+    """A deleted function is seeded again on the next run of the seeder.
+
+    The seeder holds no state outside the database, so this also covers the
+    "database was reset or restored from a backup" case: whenever the row is
+    missing, the bundled plugin is re-inserted and activated.  Users who do not
+    want the plugin are expected to *disable* it, which is preserved.
+    """
+    r = auth_client.delete(
+        f"{auth_client.base_url}/api/v1/functions/id/{owui.SNAP_PLUGIN_ID}/delete",
+        timeout=QUICK_TIMEOUT,
+    )
+    assert r.status_code == 200, (
+        f"Deleting function '{owui.SNAP_PLUGIN_ID}' returned {r.status_code}: {r.text}"
+    )
+
+    listed = auth_client.get(
+        f"{auth_client.base_url}/api/v1/functions/", timeout=QUICK_TIMEOUT
+    )
+    assert listed.status_code == 200, (
+        f"GET /api/v1/functions/ returned {listed.status_code}: {listed.text}"
+    )
+    assert not any(f.get("id") == owui.SNAP_PLUGIN_ID for f in listed.json()), (
+        f"Function '{owui.SNAP_PLUGIN_ID}' still present after deletion"
+    )
+
+    proc = subprocess.run(
+        ["sudo", "snap", "restart", "open-webui.seed-plugins"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, (
+        f"Restarting the seed-plugins service failed ({proc.returncode}):\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+
+    func = owui.wait_for_seeded_function(auth_client, auth_client.base_url)
+    assert func is not None, (
+        f"Deleted plugin '{owui.SNAP_PLUGIN_ID}' was not re-seeded and activated "
+        f"within {owui.MODELS_TIMEOUT}s.\n\nJournal tail:\n{owui.get_journal()}"
+    )
+
+    model_id = owui.wait_for_gemma_model(
+        auth_client, auth_client.base_url, prefix=owui.SNAP_PLUGIN_MODEL_PREFIX
+    )
+    assert model_id, (
+        "No plugin-provided gemma model in /api/models after re-seeding "
+        f"(waited {owui.MODELS_TIMEOUT}s)."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Model removal — must run LAST, after every model-dependent test.
 # ---------------------------------------------------------------------------
 def test_model_disappears_after_stopping_snap(auth_client, gemma_model_id):
