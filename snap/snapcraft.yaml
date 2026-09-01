@@ -24,12 +24,6 @@ platforms:
   amd64:
   arm64:
 
-plugs:
-  config:
-    interface: content
-    content: open-webui-config
-    target: $SNAP/shared-configs
-
 parts:
   local:
     plugin: dump
@@ -37,7 +31,13 @@ parts:
     organize:
       info.sh: bin/info.sh
       run-server.sh: bin/run-server.sh
-      import-shared-configs.py: bin/import-shared-configs.py
+      seed-plugins.py: bin/seed-plugins.py
+
+  plugins:
+    plugin: dump
+    source: ./plugins
+    organize:
+      '*.py': plugins/
 
   open-webui:
     plugin: python
@@ -113,7 +113,24 @@ apps:
       STATIC_DIR: $SNAP_DATA/static
       ENABLE_VERSION_UPDATE_CHECK: "false"
 
-  import-shared-configs:
-    command: bin/import-shared-configs.py
+  seed-plugins:
+    command: bin/seed-plugins.py
     daemon: oneshot
-    timer: 00:00-24:00/1440
+    install-mode: enable
+    # Seeding can legitimately fail transiently (server still starting or
+    # migrating the database, SQLite lock, secret key not written yet).  Exit
+    # codes are non-zero for those cases, so restart on failure until it
+    # succeeds instead of leaving the bundled plugin absent until the next
+    # refresh.
+    restart-condition: on-failure
+    restart-delay: 30s
+    after:
+      - server
+    plugs:
+      # Loopback access to the server's /health endpoint, which is how seeding
+      # waits for startup migrations to finish before touching the database.
+      - network
+    environment:
+      DATA_DIR: $SNAP_COMMON/data
+      STATIC_DIR: $SNAP_DATA/static
+      ENV: prod

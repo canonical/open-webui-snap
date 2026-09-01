@@ -23,17 +23,18 @@ import requests
 HEALTH_TIMEOUT = 1200  # 20 min
 # How long to wait for the gemma4 model to appear in /api/models (seconds).
 MODELS_TIMEOUT = 900   # 15 min hard cap per smoke-test plan
-# How long to wait for the gemma4 model to *disappear* after disconnecting the
-# interface.  The gemma service can take >1 min to notice the disconnect, after
-# which it triggers an Open WebUI restart, so allow a generous window.
-DISCONNECT_TIMEOUT = 300  # 5 min
+# How long to wait for the gemma4 model to *disappear* after stopping the gemma4
+# snap.  The plugin re-scans ports on each /api/models call and the model cache
+# TTL is ~1s, so removal is quick once the port stops listening; allow a modest
+# margin for the snap to fully stop.
+MODEL_REMOVAL_TIMEOUT = 120  # 2 min
 POLL_INTERVAL = 5
 
 # Per-request (connect, read) timeouts in seconds, shared by the smoke and
 # upgrade suites.  Without these a stalled server (e.g. a hung model inference)
 # would block a ``requests`` call forever.
 QUICK_TIMEOUT = (10, 30)       # lightweight JSON endpoints
-INFERENCE_TIMEOUT = (10, 300)  # model generation / file upload & processing
+INFERENCE_TIMEOUT = (10, 600)  # model generation / file upload & processing
 
 ADMIN_NAME = "Smoke Admin"
 ADMIN_EMAIL = "admin@smoke.test"
@@ -133,56 +134,171 @@ def login_admin(client, base_url: str):
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
-def _list_model_ids(client, base_url: str):
-    """Return the list of model ids from /api/models, or raise RequestException."""
-    r = client.get(f"{base_url}/api/models", timeout=10)
+def _list_model_ids(client, base_url: str, refresh: bool = False):
+    """Return the list of model ids from /api/models, or raise RequestException.
+
+    Open WebUI 0.11.0 caches the base model list (``models.base_models_cache``,
+    enabled by default) in ``app.state.BASE_MODELS``.  A plain ``GET /api/models``
+    returns that cache and only re-invokes the inference-snaps plugin's port scan
+    when called with ``?refresh=true``.  Callers that depend on *live* discovery
+    (a snap appearing or disappearing) must pass ``refresh=True`` to bypass the
+    cache, otherwise a stopped snap's model lingers until the cache is refreshed.
+    """
+    params = {"refresh": "true"} if refresh else None
+    r = client.get(f"{base_url}/api/models", params=params, timeout=10)
     if r.status_code == 200:
         return [m.get("id", "") for m in r.json().get("data", [])]
     return None
 
 
-def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT):
+def wait_for_gemma_model(client, base_url: str, timeout: int = MODELS_TIMEOUT,
+                         prefix: str | None = None):
     """Poll ``GET /api/models`` until a gemma model appears; return its id or None.
 
-    The background service that registers the gemma4 endpoint triggers a server
-    restart, so RequestException (connection refused during the restart window)
-    is swallowed and retried.
+    The inference-snaps plugin discovers gemma4 by scanning local ports, so the
+    model appears once gemma4's server is up and serving. RequestException is
+    swallowed and retried.
+
+    When *prefix* is given, only model ids starting with it are accepted.  Pass
+    ``SNAP_PLUGIN_MODEL_PREFIX`` to require that the model is served by the
+    bundled plugin rather than by some other (e.g. legacy, interface-imported)
+    connection.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            ids = _list_model_ids(client, base_url)
+            ids = _list_model_ids(client, base_url, refresh=True)
             if ids is not None:
                 for mid in ids:
-                    if "gemma" in mid.lower():
-                        return mid
+                    if "gemma" not in mid.lower():
+                        continue
+                    if prefix is not None and not mid.startswith(prefix):
+                        continue
+                    return mid
         except requests.RequestException:
             pass
         time.sleep(POLL_INTERVAL)
     return None
 
 
-def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
-                          timeout: int = DISCONNECT_TIMEOUT):
-    """Poll ``GET /api/models`` until no model id contains ``substr``.
+def _model_unusable(client, base_url: str, model_id: str) -> bool:
+    """Return True only if a chat completion to *model_id* fails to serve a reply.
 
-    Returns True once the model is gone, or the last-seen list of ids if the
-    deadline was reached (so callers can produce a useful diagnostic).
-    RequestException during the disconnect-triggered restart is swallowed.
+    Used to detect that a stopped snap's model can no longer be served even when
+    it still lingers in ``/api/models``: the plugin's ``pipe()`` hits a closed
+    port and Open WebUI returns HTTP 200 with an ``{"error": ...}`` body (no
+    ``choices``) instead of a completion.
+
+    A read timeout is deliberately NOT treated as unusable: a slow-but-alive
+    model on a loaded CI runner can legitimately take a while to respond. The
+    ``(connect, read)`` timeout keeps the connect phase short (a closed port
+    fails fast) while allowing a slow reply.
+    """
+    try:
+        r = client.post(
+            f"{base_url}/api/chat/completions",
+            json={
+                "model": model_id,
+                "chat_id": "local:model-removal-probe",
+                "messages": [{"role": "user", "content": "ping"}],
+                "stream": False,
+            },
+            timeout=(5, 60),
+        )
+    except requests.exceptions.Timeout:
+        # Alive but slow to answer — inconclusive, keep polling.
+        return False
+    except requests.exceptions.ConnectionError:
+        # Open WebUI itself is unavailable — inconclusive, keep polling.
+        return False
+    except requests.RequestException:
+        return False
+    if r.status_code != 200:
+        return True
+    try:
+        data = r.json()
+    except ValueError:
+        return True
+    # A served completion has a non-empty "choices" list; an error reply does not.
+    return "error" in data or not data.get("choices")
+
+
+def wait_for_model_absent(client, base_url: str, substr: str = "gemma",
+                          model_id: str | None = None,
+                          timeout: int = MODEL_REMOVAL_TIMEOUT):
+    """Poll until the stopped snap's model is gone from ``/api/models`` *or* unusable.
+
+    Returns True once the model has been removed, or the last-seen list of ids if
+    the deadline was reached (so callers can produce a useful diagnostic).
+
+    Two things can happen after a snap stops, depending on what else is running:
+
+    * If other inference snaps remain, the plugin still returns a non-empty model
+      list and the stopped model disappears from ``/api/models``.
+    * If the stopped snap was the *only* backend (as in CI), the plugin returns
+      an empty list and Open WebUI's ``get_all_models`` falls back to its cached
+      ``BASE_MODELS``, so the model lingers indefinitely.  In that case we detect
+      removal by confirming the model can no longer serve a request.
+
+    RequestException while the model server is stopping is swallowed.
     """
     deadline = time.monotonic() + timeout
     last_ids = None
     while time.monotonic() < deadline:
         try:
-            ids = _list_model_ids(client, base_url)
+            ids = _list_model_ids(client, base_url, refresh=True)
             if ids is not None:
                 last_ids = ids
                 if not any(substr in mid.lower() for mid in ids):
+                    return True
+                # Model still listed (stale cache): treat as removed once it can
+                # no longer serve a completion.
+                stale = model_id or next(
+                    (mid for mid in ids if substr in mid.lower()), None
+                )
+                if stale is not None and _model_unusable(client, base_url, stale):
                     return True
         except requests.RequestException:
             pass
         time.sleep(POLL_INTERVAL)
     return last_ids if last_ids is not None else []
+
+
+# ---------------------------------------------------------------------------
+# Bundled plugins (seeded functions)
+# ---------------------------------------------------------------------------
+# The snap seeds bundled Open WebUI plugins (functions) via the seed-plugins
+# oneshot daemon.  This id is derived from plugins/inference-snaps-plugin.py by
+# scripts/seed-plugins.py (non-identifier chars -> '_', lowercased).
+SNAP_PLUGIN_ID = "inference_snaps_plugin"
+# Open WebUI namespaces the models a pipe function returns as
+# "<function id>.<pipe id>", so every model served by the bundled plugin carries
+# this prefix (e.g. "inference_snaps_plugin.8324|v1|gemma3:4b").
+SNAP_PLUGIN_MODEL_PREFIX = f"{SNAP_PLUGIN_ID}."
+
+
+def wait_for_seeded_function(client, base_url: str, function_id: str = SNAP_PLUGIN_ID,
+                             timeout: int = MODELS_TIMEOUT):
+    """Poll ``GET /api/v1/functions/`` until *function_id* appears and is active.
+
+    The seed-plugins daemon runs after the server and polls for the database, so
+    the function may take a short while to show up.  Seeding inserts the row and
+    activates it in two separate operations, so a row that is present but not yet
+    active means seeding is still in progress; keep polling in that case.
+    Returns the matching function dict, or None if the deadline was reached.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            r = client.get(f"{base_url}/api/v1/functions/", timeout=10)
+            if r.status_code == 200:
+                for func in r.json():
+                    if func.get("id") == function_id and func.get("is_active"):
+                        return func
+        except requests.RequestException:
+            pass
+        time.sleep(POLL_INTERVAL)
+    return None
 
 
 # ---------------------------------------------------------------------------

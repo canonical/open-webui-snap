@@ -54,11 +54,11 @@ cleanup_enabled() {
 }
 
 # ---------------------------------------------------------------------------
-# Wait for the open-webui server to stabilise after connecting the interface.
+# Wait for the open-webui server to stabilise after startup.
 #
-# Connecting open-webui:config triggers the import-shared-configs hook, which
-# may rewrite the DB and restart snap.open-webui.server. If tests start during
-# that window, an in-flight request dies with "Connection reset by peer".
+# The server can briefly restart while it finishes initialising (e.g. first-run
+# database setup). If tests start during that window, an in-flight request dies
+# with "Connection reset by peer".
 #
 # We consider the server stable once its systemd MainPID has stayed unchanged
 # while /health returns 200 for STABLE_WINDOW consecutive seconds.
@@ -135,9 +135,17 @@ install_gemma4() {
   sudo snap install gemma4 --channel="$GEMMA4_CHANNEL"
 }
 
-connect_interface() {
-  echo "=== Connecting snap interface ==="
-  sudo snap connect open-webui:config gemma4:open-webui
+# Best-effort interface connection, used only by the upgrade runner.
+#
+# The upgrade suite installs an *older* open-webui baseline that may still rely
+# on the content interface (open-webui:config <-> gemma4:open-webui) to register
+# gemma4.  Newer, plugin-based baselines auto-discover gemma4 and no longer
+# declare the `config` plug, so the connect becomes a harmless no-op.  Either
+# way we don't want a missing-plug error to abort the run, hence `|| true`.
+connect_interface_if_available() {
+  echo "=== Connecting snap interface (best-effort, for interface-based baselines) ==="
+  sudo snap connect open-webui:config gemma4:open-webui 2>/dev/null \
+    || echo "    open-webui:config plug not present (plugin-based build); skipping."
 }
 
 install_test_deps() {

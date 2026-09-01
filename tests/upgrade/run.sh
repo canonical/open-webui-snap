@@ -2,8 +2,8 @@
 # Run the upgrade test suite directly on the host machine.
 #
 # Purges any existing open-webui, installs the baseline build from a store
-# channel, connects the gemma4 interface, then refreshes (upgrades) to the
-# target build and runs tests/upgrade/ to confirm the model survives.
+# channel, installs gemma4, then refreshes (upgrades) to the target build and
+# runs tests/upgrade/ to confirm the model survives.
 #
 # The plain smoke scenario lives in a separate runner: tests/smoke/run.sh.
 #
@@ -48,7 +48,9 @@ install_gemma4
 echo "=== Installing open-webui from channel $FROM_CHANNEL (baseline) ==="
 sudo snap install open-webui --channel="$FROM_CHANNEL"
 
-connect_interface
+# The baseline may be an older, interface-based build; connect the interface so
+# it can register gemma4.  On plugin-based builds this is a no-op.
+connect_interface_if_available
 
 wait_for_server_stable
 
