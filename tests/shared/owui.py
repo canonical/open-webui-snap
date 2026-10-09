@@ -9,6 +9,7 @@ from fixtures *and* from tests that drive snap operations directly.
 """
 
 import datetime
+import importlib.util
 import pathlib
 import subprocess
 import time
@@ -24,7 +25,7 @@ HEALTH_TIMEOUT = 1200  # 20 min
 # How long to wait for the gemma4 model to appear in /api/models (seconds).
 MODELS_TIMEOUT = 900   # 15 min hard cap per smoke-test plan
 # How long to wait for the gemma4 model to *disappear* after disconnecting the
-# interface.  The gemma service can take >1 min to notice the disconnect, after
+# interface.  The Open WebUI importer can take a minute to notice the disconnect, after
 # which it triggers an Open WebUI restart, so allow a generous window.
 DISCONNECT_TIMEOUT = 300  # 5 min
 POLL_INTERVAL = 5
@@ -42,6 +43,44 @@ ADMIN_PASSWORD = "SmokeTest1234!"
 # Record when the importing process started so journalctl can be scoped to it,
 # avoiding false "Traceback" hits from previous runs on the same host.
 _SESSION_START = datetime.datetime.now(datetime.timezone.utc)
+
+
+def load_config_importer():
+    path = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "import-shared-configs.py"
+    spec = importlib.util.spec_from_file_location("import_shared_configs", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def wait_for_provider_url(timeout: int = MODELS_TIMEOUT):
+    """Read Gemma4's published URL, allowing time for its first startup."""
+    importer = load_config_importer()
+    path = pathlib.Path("/var/snap/gemma4/common/share/provider/provider.env")
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.is_file():
+            config = importer.read_provider_config(path)
+            if config is not None:
+                return config["base_url"]
+        time.sleep(POLL_INTERVAL)
+    raise TimeoutError(f"No OPENAI_BASE_URL published in {path} within {timeout}s")
+
+
+def get_openai_config(client):
+    response = client.get(f"{client.base_url}/openai/config", timeout=QUICK_TIMEOUT)
+    response.raise_for_status()
+    return response.json()
+
+
+def update_openai_config(client, config):
+    response = client.post(
+        f"{client.base_url}/openai/config/update",
+        json=config,
+        timeout=QUICK_TIMEOUT,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 # ---------------------------------------------------------------------------

@@ -5,21 +5,23 @@ this module runs, the harness has already:
 
   * removed and purged open-webui,
   * installed open-webui from the baseline channel (OWUI_FROM_CHANNEL,
-    default stable),
-  * (re)connected open-webui:config <-> gemma4:open-webui.
+    default stable).
 
 gemma4 itself stays installed throughout.  These tests run **in file order**
 inside a single pytest session:
 
   1. baseline server healthy
   2. first-signup admin (fresh, purged DB)
-  3. gemma model present on the baseline build
-  4. text prompt works on the baseline build
-  5. upgrade (refresh) to the provided snap file / channel
-  6. fresh login on the upgraded build (old JWT is intentionally not reused)
-  7. reported version matches dependencies/requirements.txt
-  8. gemma model still present after the upgrade
-  9. text prompt still works after the upgrade
+  3. configure Gemma4 through the API (also works on legacy baselines)
+  4. gemma model present on the baseline build
+  5. text prompt works on the baseline build
+  6. upgrade (refresh) to the provided snap file / channel
+  7. fresh login on the upgraded build (old JWT is intentionally not reused)
+  8. reported version matches dependencies/requirements.txt
+  9. gemma model still present after the upgrade
+  10. verify the baseline config survived, then hand over to
+     open-webui:provider <-> gemma4:provider
+  11. text prompt still works after the upgrade
 """
 
 import os
@@ -76,6 +78,20 @@ def test_stable_admin_signup(client):
     _set_bearer(client, token)
 
 
+def test_configure_baseline_provider(client, state):
+    """Seed an untagged endpoint so legacy importers do not remove it."""
+    state["original_openai_config"] = owui.get_openai_config(client)
+    state["provider_url"] = owui.wait_for_provider_url()
+    owui.update_openai_config(client, {
+        "ENABLE_OPENAI_API": True,
+        "OPENAI_API_BASE_URLS": [state["provider_url"]],
+        "OPENAI_API_KEYS": [""],
+        "OPENAI_API_CONFIGS": {
+            "0": {"enable": True, "auth_type": "none"},
+        },
+    })
+
+
 def test_stable_gemma_model_present(client, state):
     """A gemma model is registered in /api/models on the baseline build."""
     model_id = owui.wait_for_gemma_model(client, client.base_url)
@@ -102,8 +118,8 @@ def test_perform_upgrade(client):
       * OWUI_UPGRADE_SNAP=<file>     -> sudo snap install --dangerous <file>
       * OWUI_UPGRADE_CHANNEL=<chan>  -> sudo snap refresh open-webui --channel <chan>
 
-    Snap preserves data and interface connections across the refresh, so no
-    reconnect is needed.
+    The baseline endpoint is configured through the API because older builds
+    cannot connect to Gemma4's inference-provider slot.
     """
     snap_file = os.environ.get("OWUI_UPGRADE_SNAP")
     channel = os.environ.get("OWUI_UPGRADE_CHANNEL")
@@ -173,6 +189,32 @@ def test_model_available_after_upgrade(client, state):
         f"(waited {owui.MODELS_TIMEOUT}s)."
     )
     state["model_id"] = model_id
+
+
+def test_connect_provider_after_upgrade(client, state):
+    """Replace the temporary baseline config with the actual content import."""
+    config = owui.get_openai_config(client)
+    assert state["provider_url"] in config["OPENAI_API_BASE_URLS"], (
+        "The baseline endpoint configuration did not survive the upgrade"
+    )
+
+    # Remove the temporary API entry so it cannot mask a broken importer.
+    owui.update_openai_config(client, state["original_openai_config"])
+    subprocess.run(
+        ["sudo", "snap", "connect", "open-webui:provider", "gemma4:provider"],
+        check=True,
+    )
+    model_id = owui.wait_for_gemma_model(client, client.base_url)
+    assert model_id, "No gemma model appeared after connecting gemma4:provider"
+    state["model_id"] = model_id
+
+    config = owui.get_openai_config(client)
+    urls = config["OPENAI_API_BASE_URLS"]
+    assert urls.count(state["provider_url"]) == 1
+    entry = config["OPENAI_API_CONFIGS"][str(urls.index(state["provider_url"]))]
+    assert {"name": "snap"} in entry.get("tags", []), (
+        "Gemma4 endpoint was not registered by the provider importer"
+    )
 
 
 def test_text_prompt_after_upgrade(client, state):

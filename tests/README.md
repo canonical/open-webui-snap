@@ -5,10 +5,21 @@ Two suites exercise the `open-webui` snap against the `gemma4` model snap:
 | Suite     | Runner                | What it does                                                                 |
 |-----------|-----------------------|-----------------------------------------------------------------------------|
 | `smoke`   | `tests/smoke/run.sh`  | Installs the target build, runs the smoke tests, and checks the model disappears when the interface is disconnected. |
-| `upgrade` | `tests/upgrade/run.sh`| Installs the baseline channel (`OWUI_FROM_CHANNEL`), then refreshes (upgrades) to the target build and checks the model survives. |
+| `upgrade` | `tests/upgrade/run.sh`| Configures Gemma4 through the baseline API, upgrades to the target, checks the model survives, then replaces the temporary connection with a provider-interface import. |
 
 Shared Python helpers live in `tests/shared/owui.py`; shared bash helpers in
 `tests/shared/helpers.sh`.
+
+Both suites use `open-webui:provider` connected to `gemma4:provider` (content ID
+`inference-provider`). Gemma4 publishes
+`$SNAP_COMMON/share/provider/provider.env`; Open WebUI imports its
+`OPENAI_BASE_URL`. Ollama discovery is currently an empty stub, not a second
+endpoint inferred from that URL.
+
+The upgrade suite reads Gemma4's published URL and configures the baseline
+through `/openai/config/update`, so the baseline may still use the old JSON
+interface. After upgrading, it removes that temporary configuration and
+connects the new interface, checking the imported endpoint has the `snap` tag.
 
 ## Configuration
 
