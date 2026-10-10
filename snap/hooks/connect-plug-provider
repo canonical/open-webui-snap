@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tag="snap.$SNAP_INSTANCE_NAME.hook.connect-plug-config"
+tag="snap.$SNAP_INSTANCE_NAME.hook.connect-plug-provider"
 
 # Redirect stdout to stdout+syslog
 exec 1> >(tee >(logger --tag=$tag))

@@ -25,9 +25,9 @@ platforms:
   arm64:
 
 plugs:
-  config:
+  provider:
     interface: content
-    content: open-webui-config
+    content: inference-provider
     target: $SNAP/shared-configs
 
 parts:
@@ -50,6 +50,7 @@ parts:
       - git
     stage-packages:
       - python3-minimal
+      - ffmpeg
     python-requirements:
       - requirements.txt
     override-build: |

@@ -56,7 +56,7 @@ cleanup_enabled() {
 # ---------------------------------------------------------------------------
 # Wait for the open-webui server to stabilise after connecting the interface.
 #
-# Connecting open-webui:config triggers the import-shared-configs hook, which
+# Connecting open-webui:provider triggers the import-shared-configs hook, which
 # may rewrite the DB and restart snap.open-webui.server. If tests start during
 # that window, an in-flight request dies with "Connection reset by peer".
 #
@@ -137,7 +137,7 @@ install_gemma4() {
 
 connect_interface() {
   echo "=== Connecting snap interface ==="
-  sudo snap connect open-webui:config gemma4:open-webui
+  sudo snap connect open-webui:provider gemma4:provider
 }
 
 install_test_deps() {

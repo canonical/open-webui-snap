@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit
 
 DB_PATH = os.path.join(os.environ.get("SNAP_COMMON", ""), "data", "webui.db")
 SHARED_CONFIGS_DIR = os.path.join(os.environ.get("SNAP", ""), "shared-configs")
@@ -65,12 +66,38 @@ def read_snap_entries_from_db(config: dict) -> tuple[list[str], list[str]]:
 # Read shared configs from files
 # ---------------------------------------------------------------------------
 
+def read_provider_config(filepath: str) -> dict | None:
+    """Read the literal KEY=value format written by modelctl --share-provider."""
+    values = {}
+    with open(filepath) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, separator, value = line.partition("=")
+            if not separator:
+                raise ValueError("expected a KEY=value line")
+            values[key.strip()] = value.strip()
+
+    base_url = values.get("OPENAI_BASE_URL")
+    if base_url is None:
+        print(f"  No OpenAI endpoint in {filepath}")
+        return None
+
+    parsed = urlsplit(base_url)
+    if (parsed.scheme not in ("http", "https") or not parsed.hostname
+            or any(char.isspace() for char in base_url)):
+        raise ValueError("OPENAI_BASE_URL must be a non-empty HTTP(S) URL")
+    return {"base_url": base_url}
+
+
 def read_shared_configs() -> tuple[list[dict], list[dict]]:
     """
-    Walk $SNAP/shared-configs/<name>/ and collect every openai.json /
-    ollama.json found there.  Returns (openai_cfgs, ollama_cfgs).
+    Read provider.env from each inference-provider content mount under
+    $SNAP/shared-configs/. Returns (openai_cfgs, ollama_cfgs).
     """
     openai_cfgs: list[dict] = []
+    # The provider interface does not advertise Ollama endpoints yet.
     ollama_cfgs: list[dict] = []
 
     if not os.path.isdir(SHARED_CONFIGS_DIR):
@@ -82,16 +109,15 @@ def read_shared_configs() -> tuple[list[dict], list[dict]]:
         if not os.path.isdir(subdir):
             continue
 
-        for filename, target_list in (("openai.json", openai_cfgs), ("ollama.json", ollama_cfgs)):
-            filepath = os.path.join(subdir, filename)
-            if os.path.isfile(filepath):
-                try:
-                    with open(filepath) as fh:
-                        cfg = json.load(fh)
+        filepath = os.path.join(subdir, "provider.env")
+        if os.path.isfile(filepath):
+            try:
+                cfg = read_provider_config(filepath)
+                if cfg is not None:
                     print(f"  Loaded {filepath}")
-                    target_list.append(cfg)
-                except Exception as exc:
-                    print(f"  WARNING: could not read {filepath}: {exc}")
+                    openai_cfgs.append(cfg)
+            except (OSError, ValueError) as exc:
+                print(f"  WARNING: could not read {filepath}: {exc}")
 
     return openai_cfgs, ollama_cfgs
 

@@ -179,12 +179,12 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
 def test_model_disappears_after_disconnect(auth_client, gemma_model_id):
     """Disconnecting gemma4 removes the model from /api/models.
 
-    The gemma service can take >1 min to notice the disconnect, after which it
+    The Open WebUI importer can take a minute to notice the disconnect, after which it
     triggers an Open WebUI restart, so we poll with a generous cap and tolerate
     connection errors during the restart window.
     """
     subprocess.run(
-        ["sudo", "snap", "disconnect", "open-webui:config", "gemma4:open-webui"],
+        ["sudo", "snap", "disconnect", "open-webui:provider", "gemma4:provider"],
         check=True,
     )
     result = owui.wait_for_model_absent(auth_client, auth_client.base_url)
