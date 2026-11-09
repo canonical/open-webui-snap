@@ -150,9 +150,27 @@ install_test_deps() {
 # ---------------------------------------------------------------------------
 dump_logs() {
   echo ""
+  echo "=== Memory and swap usage ==="
+  free -h || true
+  echo ""
+  echo "=== Service memory and OOM status ==="
+  systemctl show snap.open-webui.server.service snap.gemma4.server.service \
+    -p Id -p MemoryCurrent -p MemoryPeak -p MemorySwapCurrent -p MemorySwapPeak \
+    -p OOMPolicy -p Result || true
+  echo ""
+  echo "=== Kernel OOM messages (current boot) ==="
+  sudo journalctl -k -b --no-pager -n 100 \
+    --grep='[Oo]ut of memory|[Oo][Oo][Mm]|[Kk]illed process' || true
+  echo ""
   echo "=== journalctl snap.open-webui.server ==="
   journalctl -u snap.open-webui.server --no-pager -n 500 || true
   echo ""
+  echo "=== journalctl snap.gemma4.server ==="
+  journalctl -u snap.gemma4.server --no-pager -n 500 || true
+  echo ""
   echo "=== snap logs open-webui ==="
   sudo snap logs open-webui -n 100 || true
+  echo ""
+  echo "=== snap logs gemma4 ==="
+  sudo snap logs gemma4 -n 100 || true
 }

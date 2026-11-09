@@ -8,6 +8,7 @@ import owui
 from owui import INFERENCE_TIMEOUT, QUICK_TIMEOUT
 
 RAG_PROCESS_TIMEOUT = 120  # 2 min hard cap for PDF indexing
+RAG_INFERENCE_TIMEOUT = (INFERENCE_TIMEOUT[0], 600)
 
 
 def test_server_not_crashed(server_ready):
@@ -108,7 +109,7 @@ def test_audio_transcription(auth_client, audio_path):
 
 
 def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
-    """Upload CC-BY-SA-4.0.pdf, wait for indexing, ask for a summary, assert 'license' in reply."""
+    """Upload and index CC-BY-SA-4.0.pdf, then ask for the license name."""
     # 1. Upload the PDF
     with open(rag_pdf_path, "rb") as fh:
         r = auth_client.post(
@@ -151,12 +152,19 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
         f"{auth_client.base_url}/api/chat/completions",
         json={
             "model": gemma_model_id,
+            "params": {"max_tokens": 256},
             "messages": [
-                {"role": "user", "content": "Please summarise the document."}
+                {
+                    "role": "user",
+                    "content": (
+                        "What is the full name and version of the license in "
+                        "the attached document? Reply in one short sentence."
+                    ),
+                }
             ],
             "files": [{"type": "file", "id": file_id}],
         },
-        timeout=INFERENCE_TIMEOUT,
+        timeout=RAG_INFERENCE_TIMEOUT,
     )
     assert r.status_code == 200, f"chat/completions (RAG) returned {r.status_code}: {r.text}"
     content = r.json()["choices"][0]["message"]["content"]

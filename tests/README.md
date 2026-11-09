@@ -14,6 +14,11 @@ Chat completion requests omit `chat_id` to use stateless HTTP inference.
 Open WebUI 0.13.3 requires temporary (`local:` or `temporary:`) chats to have an
 authenticated, live WebSocket session, which these API-only suites do not create.
 
+The PDF RAG test asks for the license name and version in one short sentence,
+with a 256-token output budget and a 600-second completion read timeout.
+PDF indexing retains its separate 120-second deadline; other inference requests
+retain their 300-second read timeout.
+
 Both suites use `open-webui:provider` connected to `gemma4:provider` (content ID
 `inference-provider`). Gemma4 publishes
 `$SNAP_COMMON/share/provider/provider.env`; Open WebUI imports its
@@ -60,6 +65,8 @@ OWUI_FROM_CHANNEL=latest/beta OWUI_SNAP=./open-webui_*.snap ./tests/upgrade/run.
 Each runner installs the snaps, waits for the server to stabilise, provisions a
 `.venv/` at the repo root, installs `tests/smoke/requirements.txt`, and runs
 `pytest` for its suite. On failure it dumps recent journal and snap logs.
+The diagnostics include both Open WebUI and Gemma4 logs, memory and swap usage,
+service memory/OOM status, and kernel OOM messages from the current boot.
 
 > **Note:** the runners call `sudo snap ...`, so a passwordless `sudo` (or an
 > interactive session) is required.
