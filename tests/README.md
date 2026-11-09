@@ -64,9 +64,10 @@ OWUI_FROM_CHANNEL=latest/beta OWUI_SNAP=./open-webui_*.snap ./tests/upgrade/run.
 
 Each runner installs the snaps, waits for the server to stabilise, provisions a
 `.venv/` at the repo root, installs `tests/smoke/requirements.txt`, and runs
-`pytest` for its suite. On failure it dumps recent journal and snap logs.
-The diagnostics include both Open WebUI and Gemma4 logs, memory and swap usage,
-service memory/OOM status, and kernel OOM messages from the current boot.
+`pytest` for its suite. On failure it dumps journal logs for all Open WebUI and
+Gemma4 services since the runner started, including installation and setup,
+without a line limit. The diagnostics also include memory and swap usage,
+service memory/OOM status, and kernel OOM messages from the same time range.
 
 > **Note:** the runners call `sudo snap ...`, so a passwordless `sudo` (or an
 > interactive session) is required.

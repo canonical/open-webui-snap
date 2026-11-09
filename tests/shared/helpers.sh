@@ -20,6 +20,7 @@
 # globally).
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TEST_START_TIME="$(date --utc '+%Y-%m-%d %H:%M:%S UTC')"
 OWUI_URL="${OWUI_URL:-http://localhost:8080}"
 
 SNAP_FILE="${OWUI_SNAP:-}"
@@ -158,19 +159,15 @@ dump_logs() {
     -p Id -p MemoryCurrent -p MemoryPeak -p MemorySwapCurrent -p MemorySwapPeak \
     -p OOMPolicy -p Result || true
   echo ""
-  echo "=== Kernel OOM messages (current boot) ==="
-  sudo journalctl -k -b --no-pager -n 100 \
+  echo "=== Kernel OOM messages since ==="
+  sudo journalctl -k -b --no-pager --since "$TEST_START_TIME" \
     --grep='[Oo]ut of memory|[Oo][Oo][Mm]|[Kk]illed process' || true
   echo ""
-  echo "=== journalctl snap.open-webui.server ==="
-  journalctl -u snap.open-webui.server --no-pager -n 500 || true
+  echo "=== Open WebUI service logs since ==="
+  sudo journalctl --no-pager --since "$TEST_START_TIME" \
+    -u 'snap.open-webui.*.service' || true
   echo ""
-  echo "=== journalctl snap.gemma4.server ==="
-  journalctl -u snap.gemma4.server --no-pager -n 500 || true
-  echo ""
-  echo "=== snap logs open-webui ==="
-  sudo snap logs open-webui -n 100 || true
-  echo ""
-  echo "=== snap logs gemma4 ==="
-  sudo snap logs gemma4 -n 100 || true
+  echo "=== Gemma4 service logs since ==="
+  sudo journalctl --no-pager --since "$TEST_START_TIME" \
+    -u 'snap.gemma4.*.service' || true
 }
