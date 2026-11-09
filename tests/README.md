@@ -10,6 +10,10 @@ Two suites exercise the `open-webui` snap against the `gemma4` model snap:
 Shared Python helpers live in `tests/shared/owui.py`; shared bash helpers in
 `tests/shared/helpers.sh`.
 
+Chat completion requests omit `chat_id` to use stateless HTTP inference.
+Open WebUI 0.13.3 requires temporary (`local:` or `temporary:`) chats to have an
+authenticated, live WebSocket session, which these API-only suites do not create.
+
 Both suites use `open-webui:provider` connected to `gemma4:provider` (content ID
 `inference-provider`). Gemma4 publishes
 `$SNAP_COMMON/share/provider/provider.env`; Open WebUI imports its
