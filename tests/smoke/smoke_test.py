@@ -152,7 +152,6 @@ def test_pdf_rag(auth_client, gemma_model_id, rag_pdf_path):
         f"{auth_client.base_url}/api/chat/completions",
         json={
             "model": gemma_model_id,
-            "params": {"max_tokens": 256},
             "messages": [
                 {
                     "role": "user",

@@ -15,7 +15,7 @@ Open WebUI 0.13.3 requires temporary (`local:` or `temporary:`) chats to have an
 authenticated, live WebSocket session, which these API-only suites do not create.
 
 The PDF RAG test asks for the license name and version in one short sentence,
-with a 256-token output budget and a 600-second completion read timeout.
+with a 600-second completion read timeout and no explicit output-token limit.
 PDF indexing retains its separate 120-second deadline; other inference requests
 retain their 300-second read timeout.
 
