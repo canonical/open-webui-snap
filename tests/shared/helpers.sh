@@ -159,15 +159,15 @@ dump_logs() {
     -p Id -p MemoryCurrent -p MemoryPeak -p MemorySwapCurrent -p MemorySwapPeak \
     -p OOMPolicy -p Result || true
   echo ""
-  echo "=== Kernel OOM messages since ==="
+  echo "=== Kernel OOM messages ==="
   sudo journalctl -k -b --no-pager --since "$TEST_START_TIME" \
     --grep='[Oo]ut of memory|[Oo][Oo][Mm]|[Kk]illed process' || true
   echo ""
-  echo "=== Open WebUI service logs since ==="
+  echo "=== Open WebUI service logs ==="
   sudo journalctl --no-pager --since "$TEST_START_TIME" \
     -u 'snap.open-webui.*.service' || true
   echo ""
-  echo "=== Gemma4 service logs since ==="
+  echo "=== Gemma4 service logs ==="
   sudo journalctl --no-pager --since "$TEST_START_TIME" \
     -u 'snap.gemma4.*.service' || true
 }
