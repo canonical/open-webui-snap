@@ -37,13 +37,12 @@ def _set_bearer(client, token):
     client.headers.update({"Authorization": f"Bearer {token}"})
 
 
-def _text_prompt(client, model_id, chat_id):
+def _text_prompt(client, model_id):
     """POST a simple text prompt; return the reply content (asserts 200)."""
     r = client.post(
         f"{client.base_url}/api/chat/completions",
         json={
             "model": model_id,
-            "chat_id": chat_id,
             "messages": [
                 {"role": "user", "content": "Reply with the single word PONG."}
             ],
@@ -104,7 +103,7 @@ def test_stable_gemma_model_present(client, state):
 
 def test_stable_text_prompt(client, state):
     """A text prompt returns a non-empty reply on the baseline build."""
-    content = _text_prompt(client, state["model_id"], "local:upgrade-stable-text")
+    content = _text_prompt(client, state["model_id"])
     assert content.strip(), "Text prompt returned an empty response on stable"
 
 
@@ -219,5 +218,5 @@ def test_connect_provider_after_upgrade(client, state):
 
 def test_text_prompt_after_upgrade(client, state):
     """A text prompt still returns a non-empty reply after the upgrade."""
-    content = _text_prompt(client, state["model_id"], "local:upgrade-post-text")
+    content = _text_prompt(client, state["model_id"])
     assert content.strip(), "Text prompt returned an empty response after upgrade"
